@@ -61,8 +61,10 @@ echo ==^> Demarrage du backend sur :%BACKEND_PORT%
 start "AI-for-DEV backend" cmd /k "cd /d "%BACKEND%" && "%VPY%" -m uvicorn src.app.main:app --host 0.0.0.0 --port %BACKEND_PORT%"
 
 REM --- 5. Demarrage frontend (nouvelle fenetre) -----------------------------
+REM CI=1 force le mode non-interactif du Angular CLI (sinon un prompt
+REM d'autocompletion/analytics peut bloquer ou faire planter `ng serve`).
 echo ==^> Demarrage du frontend sur :%FRONTEND_PORT%
-start "AI-for-DEV frontend" cmd /k "cd /d "%FRONTEND%" && npm run start -- --port %FRONTEND_PORT%"
+start "AI-for-DEV frontend" cmd /k "cd /d "%FRONTEND%" && set CI=1&& set NG_CLI_ANALYTICS=false&& npm run start -- --port %FRONTEND_PORT%"
 
 REM --- 6. Sante + run du jour + navigateur ----------------------------------
 "%PYTHON%" "%ROOT%run.py" --backend-url "http://localhost:%BACKEND_PORT%" --frontend-url "http://localhost:%FRONTEND_PORT%"

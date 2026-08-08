@@ -63,12 +63,15 @@ fi
 
 # --- 4. Demarrage backend ---------------------------------------------------
 echo "==> Demarrage du backend sur :$BACKEND_PORT"
-(cd "$BACKEND" && python -m uvicorn src.app.main:app --host 0.0.0.0 --port "$BACKEND_PORT") &
+(cd "$BACKEND" && python -m uvicorn src.app.main:app --host 0.0.0.0 --port "$BACKEND_PORT") </dev/null &
 BACKEND_PID=$!
 
 # --- 5. Demarrage frontend --------------------------------------------------
+# CI=1 + stdin sur /dev/null : force le mode NON-INTERACTIF du Angular CLI, sinon
+# il tente d'afficher un prompt (autocompletion/analytics) qui, lance en tache de
+# fond, est "force closed" et fait planter `ng serve`.
 echo "==> Demarrage du frontend sur :$FRONTEND_PORT"
-(cd "$FRONTEND" && npm run start -- --port "$FRONTEND_PORT") &
+(cd "$FRONTEND" && CI=1 NG_CLI_ANALYTICS=false npm run start -- --port "$FRONTEND_PORT") </dev/null &
 FRONTEND_PID=$!
 
 # --- Arret propre -----------------------------------------------------------
