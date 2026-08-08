@@ -1,0 +1,28 @@
+AI for developers
+AI coding assistant
+Claude
+Claude Code
+GitHub Copilot
+Cursor
+Windsurf
+LLM
+RAG
+Agentic AI
+AI agents
+MCP
+Model Context Protocol
+LangChain
+LangGraph
+Spring AI
+Semantic Kernel
+Python
+Java
+OpenAI
+Anthropic
+Azure OpenAI
+Prompt engineering
+Vector database
+Embeddings
+Fine-tuning
+Code generation
+Developer tools

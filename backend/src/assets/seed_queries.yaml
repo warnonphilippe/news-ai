@@ -1,0 +1,17 @@
+# Requetes seed pour la recherche quotidienne.
+# Deux axes thematiques ; le node build_queries les combine avec les tags
+# et la fenetre temporelle pour produire les requetes envoyees a Exa/Brave.
+
+# Axe 1 : outils de developpement assistes par IA
+ai_assisted_dev_tools:
+  - "latest news on AI coding assistants Claude Code, GitHub Copilot, Cursor for developers"
+  - "new features and releases in AI-assisted software development tools"
+  - "AI pair programming and agentic coding workflows for developers"
+  - "Model Context Protocol (MCP) servers and tooling updates"
+
+# Axe 2 : integration de fonctionnalites IA dans les applications
+ai_in_applications:
+  - "building LLM-powered features into Java and Python applications"
+  - "RAG, embeddings and vector search best practices for developers"
+  - "LangChain LangGraph agent frameworks updates and tutorials"
+  - "Spring AI and Python LLM integration patterns and releases"
