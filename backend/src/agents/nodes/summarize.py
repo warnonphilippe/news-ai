@@ -47,13 +47,15 @@ async def _summarize_all(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any
                     "snippet": cand.get("snippet", "") or "(pas d'extrait disponible)",
                 }
             )
+            # La pertinence n'est PAS jugee ici : elle l'est en un seul appel
+            # comparatif (node rank_relevance), pour que les notes soient
+            # comparables entre candidats.
             return {
                 **cand,
                 "summary": res.summary,
                 "why_it_matters": res.why_it_matters,
                 "tags": res.tags,
                 "topic_cluster": res.topic_cluster,
-                "relevance": res.relevance,
             }
         except Exception as exc:  # noqa: BLE001
             logger.warning("summarize KO pour %s: %s", cand.get("url"), exc)

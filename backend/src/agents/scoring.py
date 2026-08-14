@@ -1,12 +1,14 @@
 """Calcul du score de selection : pertinence LLM ponderee par fraicheur et source.
 
-Le LLM fournit une pertinence brute (0-100). Ce module la corrige par deux
-facteurs objectifs :
+Le LLM fournit une pertinence comparee (0-100, cf. node rank_relevance). Ce
+module la corrige par trois facteurs :
   - la **fraicheur** : un article de veille perd tout interet en vieillissant ;
   - l'**autorite de la source** : editeurs et blogs d'ingenierie de reference
-    sont priorises face aux agregateurs / contenus SEO.
+    sont priorises face aux agregateurs / contenus SEO (a priori editorial) ;
+  - la **reception communautaire** : points Hacker News (seul signal externe
+    reellement mesure), neutre en l'absence de donnee.
 
-    score_final = relevance x facteur_fraicheur x facteur_source
+    score_final = relevance x fraicheur x source x communaute
 """
 
 import functools
@@ -153,11 +155,14 @@ def compute_score(
 
     fresh = freshness_factor(age, window_days)
     src = source_factor(article.get("source", ""))
+    # Signal communautaire (Hacker News) : neutre a 1.0 si absent.
+    community = float(article.get("community_factor") or 1.0)
 
     return {
         "relevance": relevance,
         "age_days": age,
         "freshness_factor": round(fresh, 3),
         "source_factor": round(src, 3),
-        "final_score": round(relevance * fresh * src, 2),
+        "community_factor": round(community, 3),
+        "final_score": round(relevance * fresh * src * community, 2),
     }

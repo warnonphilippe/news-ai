@@ -2,7 +2,8 @@
 
 Pipeline lineaire :
     load_config -> build_queries -> search -> dedupe -> filter_recent
-                -> summarize -> novelty_check -> select_top -> persist
+                -> summarize -> novelty_check -> rank_relevance
+                -> community_signal -> select_top -> persist
 """
 
 import logging
@@ -14,7 +15,9 @@ from src.agents.nodes.dedupe import dedupe
 from src.agents.nodes.filter_recent import filter_recent
 from src.agents.nodes.load_config import make_load_config
 from src.agents.nodes.novelty_check import novelty_check
+from src.agents.nodes.community_signal import community_signal
 from src.agents.nodes.persist import make_persist
+from src.agents.nodes.rank_relevance import rank_relevance
 from src.agents.nodes.search import search
 from src.agents.nodes.select import select_top
 from src.agents.nodes.summarize import summarize
@@ -35,6 +38,8 @@ def build_graph(repo: Repository):
     g.add_node("filter_recent", filter_recent)
     g.add_node("summarize", summarize)
     g.add_node("novelty_check", novelty_check)
+    g.add_node("rank_relevance", rank_relevance)
+    g.add_node("community_signal", community_signal)
     g.add_node("select_top", select_top)
     g.add_node("persist", make_persist(repo))
 
@@ -45,7 +50,9 @@ def build_graph(repo: Repository):
     g.add_edge("dedupe", "filter_recent")
     g.add_edge("filter_recent", "summarize")
     g.add_edge("summarize", "novelty_check")
-    g.add_edge("novelty_check", "select_top")
+    g.add_edge("novelty_check", "rank_relevance")
+    g.add_edge("rank_relevance", "community_signal")
+    g.add_edge("community_signal", "select_top")
     g.add_edge("select_top", "persist")
     g.add_edge("persist", END)
 

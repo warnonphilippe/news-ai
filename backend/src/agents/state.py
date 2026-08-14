@@ -22,7 +22,7 @@ class DigestState(TypedDict, total=False):
 # ---------------------------------------------------------------- summarize
 
 class ArticleSummary(BaseModel):
-    """Sortie structuree du LLM pour un article."""
+    """Sortie structuree du LLM pour un article (appel par article)."""
 
     summary: str = Field(description="Resume factuel de 3 a 5 phrases, en francais.")
     why_it_matters: str = Field(
@@ -34,11 +34,26 @@ class ArticleSummary(BaseModel):
     topic_cluster: str = Field(
         description="Etiquette courte du sujet (ex: 'Claude Code', 'RAG', 'LangGraph')."
     )
-    relevance: int = Field(
-        description="Pertinence 0-100 pour l'audience 'IA for DEV' Java/Python.",
+
+
+# ------------------------------------------------------- pertinence comparee
+
+class RelevanceScore(BaseModel):
+    url: str = Field(description="URL du candidat note.")
+    score: int = Field(
+        description="Pertinence 0-100 selon la grille, comparee aux autres candidats.",
         ge=0,
         le=100,
     )
+    rationale: str = Field(
+        default="", description="Justification courte (max 15 mots)."
+    )
+
+
+class RelevanceRanking(BaseModel):
+    """Notation de TOUS les candidats en un seul appel, pour qu'ils soient comparables."""
+
+    items: List[RelevanceScore]
 
 
 # ------------------------------------------------------------ novelty check

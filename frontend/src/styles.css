@@ -209,6 +209,31 @@ body {
   font-weight: 600;
   cursor: help;
 }
+.card__hn {
+  background: var(--panel-2);
+  color: #ff6600;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.card__hn:hover {
+  text-decoration: underline;
+}
+.card__rationale {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--accent);
+  background: var(--panel-2);
+  border-radius: 0 6px 6px 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.card__rationale-label {
+  color: var(--accent);
+  font-weight: 600;
+  margin-right: 4px;
+}
 .card__summary {
   margin: 6px 0;
 }

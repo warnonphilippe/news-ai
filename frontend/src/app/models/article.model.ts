@@ -20,9 +20,13 @@ export interface Article {
 
   /** Composantes du score de sélection (auditabilité). */
   relevance: number | null;
+  relevance_rationale: string | null;
   age_days: number | null;
   freshness_factor: number | null;
   source_factor: number | null;
+  community_factor: number | null;
+  hn_points: number | null;
+  hn_comments: number | null;
   final_score: number | null;
 }
 

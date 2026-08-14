@@ -110,8 +110,9 @@ class Repository:
                     "INSERT INTO articles (run_date, url, normalized_url, title, "
                     "summary, why_it_matters, source, published_date, tags_json, "
                     "topic_cluster, links_json, is_update_of, rank, "
-                    "relevance, age_days, freshness_factor, source_factor, final_score) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "relevance, relevance_rationale, age_days, freshness_factor, "
+                    "source_factor, community_factor, hn_points, hn_comments, final_score) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         run_date,
                         art.get("url", ""),
@@ -127,9 +128,13 @@ class Repository:
                         art.get("is_update_of"),
                         rank,
                         art.get("relevance"),
+                        art.get("relevance_rationale"),
                         art.get("age_days"),
                         art.get("freshness_factor"),
                         art.get("source_factor"),
+                        art.get("community_factor"),
+                        art.get("hn_points"),
+                        art.get("hn_comments"),
                         art.get("final_score"),
                     ),
                 )

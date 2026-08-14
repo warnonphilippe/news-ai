@@ -27,6 +27,15 @@ import { Article } from '../../models/article.model';
               [title]="scoreDetail"
               >score {{ article.final_score }}</span
             >
+            <a
+              *ngIf="article.hn_points"
+              class="card__hn"
+              [href]="hnUrl"
+              target="_blank"
+              rel="noopener"
+              [title]="article.hn_comments + ' commentaires sur Hacker News'"
+              >HN {{ article.hn_points }} pts</a
+            >
           </div>
         </div>
       </header>
@@ -35,6 +44,11 @@ import { Article } from '../../models/article.model';
 
       <p class="card__why" *ngIf="article.why_it_matters">
         <strong>Pourquoi c'est important&nbsp;:</strong> {{ article.why_it_matters }}
+      </p>
+
+      <p class="card__rationale" *ngIf="article.relevance_rationale">
+        <span class="card__rationale-label">Retenu car</span>
+        {{ article.relevance_rationale }}
       </p>
 
       <div class="card__tags" *ngIf="article.tags?.length">
@@ -75,7 +89,13 @@ export class DigestCardComponent {
       `pertinence ${a.relevance ?? '?'}` +
       ` × fraîcheur ${a.freshness_factor ?? '?'}` +
       ` × source ${a.source_factor ?? '?'}` +
+      ` × communauté ${a.community_factor ?? '?'}` +
       ` = ${a.final_score ?? '?'}`
     );
+  }
+
+  /** Discussion Hacker News correspondant à l'article. */
+  get hnUrl(): string {
+    return `https://hn.algolia.com/?query=${encodeURIComponent(this.article.url)}&type=story`;
   }
 }

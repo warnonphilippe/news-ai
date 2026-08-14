@@ -118,6 +118,7 @@ Réglages dans `backend/.env` :
 | `HISTORY_DAYS` | `14` | profondeur de l'historique / anti-redites |
 | `SEARCH_WINDOW_DAYS` | `7` | âge maximum d'un article retenu (jours) |
 | `UNDATED_FRESHNESS_FACTOR` | `0.75` | pénalité des articles sans date exploitable |
+| `ENABLE_HN_SIGNAL` | `true` | interroger Hacker News pour la pondération communautaire |
 
 Le **domaine de veille** s'ajuste sans toucher au code :
 - `backend/src/assets/tags.txt` — mots-clés suivis ;
@@ -129,18 +130,22 @@ Le **domaine de veille** s'ajuste sans toucher au code :
 ### Comment les 5 articles sont choisis
 
 ```
-score final = pertinence (0-100, jugée par le LLM)
-            × facteur de fraîcheur (1.0 récent → 0.25 ancien)
-            × facteur de source    (source_weights.yaml)
+score final = pertinence (0-100, tous les candidats notés ensemble)
+            × facteur de fraîcheur  (1.0 récent → 0.25 ancien)
+            × facteur de source     (source_weights.yaml)
+            × facteur communautaire (points Hacker News, neutre si absent)
 ```
 
 Les articles hors fenêtre sont écartés en amont, puis les doublons des 14
-derniers jours, et enfin les 5 meilleurs scores sont retenus. Les composantes du
-score sont conservées en base et consultables dans l'UI.
+derniers jours, et enfin les 5 meilleurs scores sont retenus.
 
-> Limite à connaître : la pertinence est un jugement du LLM sur un extrait, sans
-> évaluation externe (ni score fournisseur, ni signal communautaire). Voir
-> [archi.md § 9](archi.md) pour le détail des limites.
+La pertinence est notée en **comparant les candidats entre eux en un seul appel**
+(avec une grille explicite), et chaque article affiche la raison de sa sélection
+(« Retenu car… ») ainsi que le détail de son score au survol.
+
+> Limite à connaître : la pertinence reste un jugement du LLM sur un extrait.
+> Le seul signal externe est Hacker News, qui ne couvre qu'une partie des
+> articles. Voir [archi.md § 9](archi.md) pour le détail.
 
 ---
 

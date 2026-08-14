@@ -37,12 +37,18 @@ class Settings(BaseSettings):
         default=0.75,
         description="Facteur applique aux articles sans date de publication exploitable",
     )
+    enable_hn_signal: bool = Field(
+        default=True,
+        description="Interroger Hacker News pour ponderer par la reception communautaire",
+    )
+    hn_timeout: int = Field(default=10, description="Timeout des appels Hacker News (s)")
 
     # --- Chemins ---
     db_path: Path = Field(default=DATA_DIR / "news.db")
     tags_file: Path = Field(default=ASSETS_DIR / "tags.txt")
     seed_queries_file: Path = Field(default=ASSETS_DIR / "seed_queries.yaml")
     source_weights_file: Path = Field(default=ASSETS_DIR / "source_weights.yaml")
+    relevance_prompt_file: Path = Field(default=ASSETS_DIR / "relevance_prompt.md")
 
     model_config = SettingsConfigDict(
         env_file=str(BACKEND_ROOT / ".env"),

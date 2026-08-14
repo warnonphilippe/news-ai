@@ -69,6 +69,7 @@ news/
 │       │   ├── mcp_tools.py       # accès MCP Exa + Brave (python-sdk mcp)
 │       │   ├── search_parse.py    # normalisation d'URL + parsing des résultats MCP
 │       │   ├── scoring.py         # dates, décote de fraîcheur, poids de source, score final
+│       │   ├── community.py       # signal Hacker News (API Algolia)
 │       │   └── nodes/             # un fichier par étape du pipeline
 │       │       ├── load_config.py
 │       │       ├── build_queries.py
@@ -77,6 +78,8 @@ news/
 │       │       ├── filter_recent.py
 │       │       ├── summarize.py
 │       │       ├── novelty_check.py
+│       │       ├── rank_relevance.py
+│       │       ├── community_signal.py
 │       │       ├── select.py
 │       │       └── persist.py
 │       └── assets/
@@ -84,6 +87,7 @@ news/
 │           ├── seed_queries.yaml         # requêtes seed (2 axes thématiques)
 │           ├── source_weights.yaml       # pondération des domaines (autorité)
 │           ├── summary_system_prompt.md  # prompt de résumé
+│           ├── relevance_prompt.md       # grille de notation comparative
 │           └── novelty_prompt.md         # prompt de jugement de nouveauté
 │
 └── frontend/                      # === Angular v20 (TypeScript) ===
@@ -121,8 +125,10 @@ patch partiel de l'état.
 | 5 | `filter_recent` | Applique la fenêtre de fraîcheur (Brave ne filtre pas à la source) et **ordonne du plus frais au plus ancien** | `deduped` → `deduped` (filtré, trié, `age_days`) |
 | 6 | `summarize` | Pour chaque candidat : résumé, « pourquoi », tags, cluster, pertinence (LLM, sortie structurée, concurrent) | `deduped` → `summarized` |
 | 7 | `novelty_check` | **Un seul** appel LLM classe chaque candidat `NEW` / `DUPLICATE` / `UPDATE` vs l'historique | `summarized`, `recent_history` → `summarized` (annoté) |
-| 8 | `select_top` | Écarte les `DUPLICATE`, calcule le **score pondéré** et garde `MAX_ARTICLES_PER_DAY` | `summarized` → `selected` |
-| 9 | `persist` | Écrit les articles retenus **et les composantes du score** dans SQLite | `selected` → ∅ |
+| 8 | `rank_relevance` | **Un seul** appel LLM note la pertinence de tous les survivants **en les comparant** (grille explicite + `rationale`) | `summarized` → `summarized` (+ `relevance`) |
+| 9 | `community_signal` | Interroge l'API Hacker News pour les points/commentaires de chaque URL (dégrade en neutre si indisponible) | `summarized` → `summarized` (+ `hn_points`) |
+| 10 | `select_top` | Écarte les `DUPLICATE`, calcule le **score pondéré** et garde `MAX_ARTICLES_PER_DAY` | `summarized` → `selected` |
+| 11 | `persist` | Écrit les articles retenus **et les composantes du score** dans SQLite | `selected` → ∅ |
 
 **Dégradation gracieuse** : chaque source de recherche capture ses erreurs
 (timeout, `npx` absent, clé manquante) et retourne une liste vide + un message
@@ -131,20 +137,36 @@ sur « tout est NEW » si l'appel LLM échoue.
 
 ### 3.2 Critères de sélection (`agents/scoring.py`)
 
-Le classement final **n'utilise pas la pertinence brute du LLM seule** : celle-ci
-est pondérée par deux facteurs objectifs.
+Le classement combine une pertinence **comparée** et trois facteurs correctifs :
 
 ```
-score_final = relevance (LLM, 0-100)
-            × facteur_fraîcheur        (décote d'ancienneté)
-            × facteur_source           (autorité du domaine)
+score_final = relevance (0-100, notation comparative)
+            × facteur_fraîcheur   (décote d'ancienneté)
+            × facteur_source      (autorité du domaine — a priori éditorial)
+            × facteur_communauté  (réception Hacker News — signal externe mesuré)
 ```
 
 | Composante | Origine | Détail |
 |---|---|---|
-| `relevance` | LLM (`ArticleSummary.relevance`) | 0–100, jugé sur titre + extrait, pour l'audience « IA for DEV » Java/Python |
-| `facteur_fraîcheur` | calculé | 1.0 à ≤ 1 j → décroissance linéaire jusqu'à 0.6 en fin de fenêtre → plancher 0.25 au-delà. Article sans date exploitable : `UNDATED_FRESHNESS_FACTOR` (0.75) |
-| `facteur_source` | `assets/source_weights.yaml` | match par **suffixe** de domaine (`blog.jetbrains.com` hérite de `jetbrains.com`). > 1 pour les sources primaires (éditeurs, docs officielles), < 1 pour les agrégateurs / contenus SEO |
+| `relevance` | LLM, **un seul appel** (`rank_relevance`) | Tous les candidats sont notés ensemble, avec une grille explicite (90-100 majeur → 0-29 hors sujet) et l'obligation d'utiliser toute l'échelle. Une `rationale` accompagne chaque note. |
+| `facteur_fraîcheur` | calculé | 1.0 à ≤ 1 j → décroissance linéaire jusqu'à 0.6 en fin de fenêtre → plancher 0.25 au-delà. Sans date exploitable : `UNDATED_FRESHNESS_FACTOR` (0.75) |
+| `facteur_source` | `assets/source_weights.yaml` | match par **suffixe** de domaine (`blog.jetbrains.com` hérite de `jetbrains.com`). > 1 pour les sources primaires, < 1 pour les agrégateurs |
+| `facteur_communauté` | API Algolia Hacker News | `1 + 0.05 × log₁₀(1+points)`, plafonné à 1.20. **Neutre (1.0) en l'absence de signal** : ne pas être sur HN ne pénalise jamais |
+
+> Le score peut dépasser 100 : les facteurs correctifs sont multiplicatifs et
+> peuvent excéder 1. Seul l'ordre relatif importe.
+
+**Pourquoi une notation comparative ?** Noter chaque article dans un appel isolé
+produisait des scores non comparables : privé de point de référence, le modèle
+tassait ses notes. Mesures avant/après sur des runs réels :
+
+| | étendue | écart-type |
+|---|---|---|
+| Appels isolés | 82–95 (13 pts) | 4.3 |
+| **Appel comparatif** | **35–94 (59 pts)** | **19.9** |
+
+Auparavant la pertinence discriminait *moins* que les facteurs correctifs ; elle
+redevient le critère dominant.
 
 **Fenêtre de fraîcheur** (`SEARCH_WINDOW_DAYS`, 7 j par défaut) : appliquée deux
 fois — à la source via `startPublishedDate` (Exa) et uniformément par le node
@@ -328,23 +350,27 @@ Exa), `@modelcontextprotocol/server-brave-search`.
 
 ### Sur la qualité de la sélection
 
-- **Pertinence non calibrée entre articles.** Chaque candidat est noté dans un
-  appel LLM **isolé** : le modèle ne voit jamais les autres candidats. En
-  pratique les notes se tassent (mesuré : 82–95, écart-type 4.3), si bien que la
-  pertinence discrimine *moins* que les facteurs de fraîcheur et de source.
-  Un scoring **comparatif** (un seul appel classant tous les candidats) est la
-  correction naturelle.
-- **Aucun signal de qualité objectif.** Vérifié : ni Exa (via MCP) ni Brave ne
-  renvoient de score — Exa expose `Title/URL/Published/Author/Highlights/Text`,
-  Brave `Title/Description/URL`. Aucune évaluation communautaire (points Hacker
-  News, étoiles GitHub, citations) n'est consultée.
+- **Aucun score fourni par les moteurs de recherche.** Vérifié : ni Exa (via MCP)
+  ni Brave ne renvoient d'indicateur — Exa expose
+  `Title/URL/Published/Author/Highlights/Text`, Brave `Title/Description/URL`.
+  Le seul signal externe mesuré est donc Hacker News, et il ne couvre qu'une
+  minorité des articles (typiquement 2 sur 7).
 - **`source_weights.yaml` est un a priori éditorial**, pas une mesure : il juge
   l'éditeur, pas l'article. Un billet faible sur un domaine bonifié reste bonifié.
 - **Jugement sur extrait** : le LLM ne lit jamais l'article complet, seulement le
   titre et un extrait tronqué à 4000 caractères.
 - **Troncature avant scoring** : seuls les `MAX_ARTICLES_PER_DAY × 3` premiers
-  candidats sont résumés. `filter_recent` ordonne désormais le vivier par
-  fraîcheur, mais un bon article très en aval reste hors du champ.
+  candidats sont résumés. `filter_recent` ordonne le vivier par fraîcheur, mais
+  un bon article très en aval reste hors du champ.
+- **Couplage HN / anglophone** : le signal communautaire favorise mécaniquement
+  les sujets populaires sur Hacker News, au détriment des écosystèmes Java
+  d'entreprise, peu représentés. Le plafond à 1.20 limite l'effet.
+
+### Pistes non implémentées
+
+- Étoiles GitHub pour les articles pointant vers un dépôt.
+- Lecture de l'article complet (au lieu de l'extrait) avant notation.
+- Scoring de tout le vivier plutôt que des 15 premiers.
 
 ### Techniques
 

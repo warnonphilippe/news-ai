@@ -30,11 +30,15 @@ CREATE TABLE IF NOT EXISTS articles (
     links_json     TEXT,                    -- JSON array de {title,url}
     is_update_of   INTEGER,                 -- FK articles.id ou NULL
     rank           INTEGER,
-    relevance        INTEGER,               -- pertinence brute LLM (0-100)
-    age_days         INTEGER,               -- age au moment du run
-    freshness_factor REAL,                  -- decote d'anciennete appliquee
-    source_factor    REAL,                  -- ponderation du domaine
-    final_score      REAL,                  -- relevance x fraicheur x source
+    relevance           INTEGER,            -- pertinence comparee (0-100)
+    relevance_rationale TEXT,               -- justification courte du LLM
+    age_days            INTEGER,            -- age au moment du run
+    freshness_factor    REAL,               -- decote d'anciennete appliquee
+    source_factor       REAL,               -- ponderation du domaine
+    community_factor    REAL,               -- bonus reception Hacker News
+    hn_points           INTEGER,            -- points HN (NULL si absent)
+    hn_comments         INTEGER,
+    final_score         REAL,               -- relevance x fraicheur x source x communaute
     FOREIGN KEY (run_date) REFERENCES runs(run_date),
     FOREIGN KEY (is_update_of) REFERENCES articles(id)
 );
@@ -61,6 +65,10 @@ _ADDED_COLUMNS = [
     ("articles", "freshness_factor", "REAL"),
     ("articles", "source_factor", "REAL"),
     ("articles", "final_score", "REAL"),
+    ("articles", "relevance_rationale", "TEXT"),
+    ("articles", "community_factor", "REAL"),
+    ("articles", "hn_points", "INTEGER"),
+    ("articles", "hn_comments", "INTEGER"),
 ]
 
 
