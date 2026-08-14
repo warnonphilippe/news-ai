@@ -1,17 +1,10 @@
 # Ponderation des sources dans le calcul du score final.
 #
-#   score_final = relevance x fraicheur x SOURCE x communaute
+#   score_final = relevance (LLM) x facteur_fraicheur x facteur_source
 #
 # Le match se fait par suffixe de domaine : 'blog.jetbrains.com' herite du
 # poids defini pour 'jetbrains.com'.
 # Ajustez librement : > 1.0 pour prioriser, < 1.0 pour retrograder.
-# Tout domaine absent de la liste recoit `default_factor`.
-#
-# ATTENTION : ce fichier est lu une seule fois par processus (cache). Apres
-# modification, redemarrez le backend pour que les nouveaux poids s'appliquent.
-#
-# Ce fichier juge l'EDITEUR, pas l'article : c'est un a priori editorial
-# assume, a ajuster selon vos sources de confiance.
 
 default_factor: 1.0
 
@@ -30,10 +23,10 @@ weights:
   llamaindex.ai: 1.15
   huggingface.co: 1.15
   modelcontextprotocol.io: 1.25
-  cursor.com: 1.15
   docker.com: 1.10
   redhat.com: 1.10
   oracle.com: 1.10
+  cursor.com: 0.90
 
   # --- Ingenierie & analyse de qualite ---
   martinfowler.com: 1.20
