@@ -27,13 +27,22 @@ class Settings(BaseSettings):
     # --- Runtime ---
     max_articles_per_day: int = Field(default=5)
     history_days: int = Field(default=14)
-    search_window_days: int = Field(default=7)
+    search_window_days: int = Field(
+        default=7, description="Fenetre de fraicheur : age max d'un article, en jours"
+    )
     mcp_timeout: int = Field(default=60)
+
+    # --- Scoring ---
+    undated_freshness_factor: float = Field(
+        default=0.75,
+        description="Facteur applique aux articles sans date de publication exploitable",
+    )
 
     # --- Chemins ---
     db_path: Path = Field(default=DATA_DIR / "news.db")
     tags_file: Path = Field(default=ASSETS_DIR / "tags.txt")
     seed_queries_file: Path = Field(default=ASSETS_DIR / "seed_queries.yaml")
+    source_weights_file: Path = Field(default=ASSETS_DIR / "source_weights.yaml")
 
     model_config = SettingsConfigDict(
         env_file=str(BACKEND_ROOT / ".env"),

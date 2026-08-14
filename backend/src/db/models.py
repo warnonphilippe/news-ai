@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS articles (
     links_json     TEXT,                    -- JSON array de {title,url}
     is_update_of   INTEGER,                 -- FK articles.id ou NULL
     rank           INTEGER,
+    relevance        INTEGER,               -- pertinence brute LLM (0-100)
+    age_days         INTEGER,               -- age au moment du run
+    freshness_factor REAL,                  -- decote d'anciennete appliquee
+    source_factor    REAL,                  -- ponderation du domaine
+    final_score      REAL,                  -- relevance x fraicheur x source
     FOREIGN KEY (run_date) REFERENCES runs(run_date),
     FOREIGN KEY (is_update_of) REFERENCES articles(id)
 );
@@ -48,11 +53,31 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+# Colonnes ajoutees apres la creation initiale du schema. Appliquees en
+# ALTER TABLE sur les bases existantes, pour ne pas perdre l'historique.
+_ADDED_COLUMNS = [
+    ("articles", "relevance", "INTEGER"),
+    ("articles", "age_days", "INTEGER"),
+    ("articles", "freshness_factor", "REAL"),
+    ("articles", "source_factor", "REAL"),
+    ("articles", "final_score", "REAL"),
+]
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Ajoute les colonnes manquantes (idempotent)."""
+    for table, column, ctype in _ADDED_COLUMNS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ctype}")
+
+
 def init_db(db_path: Path) -> None:
-    """Cree les tables si elles n'existent pas."""
+    """Cree les tables si elles n'existent pas, puis applique les migrations."""
     conn = get_connection(db_path)
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()

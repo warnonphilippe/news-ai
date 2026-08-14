@@ -109,8 +109,9 @@ class Repository:
                 conn.execute(
                     "INSERT INTO articles (run_date, url, normalized_url, title, "
                     "summary, why_it_matters, source, published_date, tags_json, "
-                    "topic_cluster, links_json, is_update_of, rank) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "topic_cluster, links_json, is_update_of, rank, "
+                    "relevance, age_days, freshness_factor, source_factor, final_score) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         run_date,
                         art.get("url", ""),
@@ -125,6 +126,11 @@ class Repository:
                         json.dumps(art.get("links", []), ensure_ascii=False),
                         art.get("is_update_of"),
                         rank,
+                        art.get("relevance"),
+                        art.get("age_days"),
+                        art.get("freshness_factor"),
+                        art.get("source_factor"),
+                        art.get("final_score"),
                     ),
                 )
             conn.commit()

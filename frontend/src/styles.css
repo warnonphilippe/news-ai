@@ -201,6 +201,14 @@ body {
   padding: 1px 8px;
   font-weight: 600;
 }
+.card__score {
+  background: var(--panel-2);
+  color: var(--accent-2);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-weight: 600;
+  cursor: help;
+}
 .card__summary {
   margin: 6px 0;
 }

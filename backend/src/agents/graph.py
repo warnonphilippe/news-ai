@@ -1,7 +1,7 @@
 """Construction du graphe LangGraph du digest quotidien.
 
 Pipeline lineaire :
-    load_config -> build_queries -> search -> dedupe
+    load_config -> build_queries -> search -> dedupe -> filter_recent
                 -> summarize -> novelty_check -> select_top -> persist
 """
 
@@ -11,6 +11,7 @@ from langgraph.graph import END, START, StateGraph
 
 from src.agents.nodes.build_queries import build_queries
 from src.agents.nodes.dedupe import dedupe
+from src.agents.nodes.filter_recent import filter_recent
 from src.agents.nodes.load_config import make_load_config
 from src.agents.nodes.novelty_check import novelty_check
 from src.agents.nodes.persist import make_persist
@@ -31,6 +32,7 @@ def build_graph(repo: Repository):
     g.add_node("build_queries", build_queries)
     g.add_node("search", search)
     g.add_node("dedupe", dedupe)
+    g.add_node("filter_recent", filter_recent)
     g.add_node("summarize", summarize)
     g.add_node("novelty_check", novelty_check)
     g.add_node("select_top", select_top)
@@ -40,7 +42,8 @@ def build_graph(repo: Repository):
     g.add_edge("load_config", "build_queries")
     g.add_edge("build_queries", "search")
     g.add_edge("search", "dedupe")
-    g.add_edge("dedupe", "summarize")
+    g.add_edge("dedupe", "filter_recent")
+    g.add_edge("filter_recent", "summarize")
     g.add_edge("summarize", "novelty_check")
     g.add_edge("novelty_check", "select_top")
     g.add_edge("select_top", "persist")

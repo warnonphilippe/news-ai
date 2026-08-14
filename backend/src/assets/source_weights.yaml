@@ -1,0 +1,53 @@
+# Ponderation des sources dans le calcul du score final.
+#
+#   score_final = relevance (LLM) x facteur_fraicheur x facteur_source
+#
+# Le match se fait par suffixe de domaine : 'blog.jetbrains.com' herite du
+# poids defini pour 'jetbrains.com'.
+# Ajustez librement : > 1.0 pour prioriser, < 1.0 pour retrograder.
+
+default_factor: 1.0
+
+weights:
+  # --- Sources primaires : editeurs & documentation officielle ---
+  anthropic.com: 1.25
+  claude.com: 1.25
+  openai.com: 1.20
+  github.blog: 1.20
+  googleblog.com: 1.15
+  microsoft.com: 1.15
+  jetbrains.com: 1.15
+  spring.io: 1.20
+  python.org: 1.20
+  langchain.dev: 1.20
+  llamaindex.ai: 1.15
+  huggingface.co: 1.15
+  modelcontextprotocol.io: 1.25
+  cursor.com: 1.15
+  docker.com: 1.10
+  redhat.com: 1.10
+  oracle.com: 1.10
+
+  # --- Ingenierie & analyse de qualite ---
+  martinfowler.com: 1.20
+  infoq.com: 1.15
+  thoughtworks.com: 1.15
+  simonwillison.net: 1.15
+  addyosmani.com: 1.10
+  baeldung.com: 1.10
+  realpython.com: 1.10
+  arxiv.org: 1.10
+  acm.org: 1.10
+
+  # --- Presse tech generaliste : correcte mais souvent en surface ---
+  techcrunch.com: 0.95
+  venturebeat.com: 0.95
+  zdnet.com: 0.90
+  theverge.com: 0.90
+
+  # --- Agregateurs / contenu souvent SEO : retrogrades ---
+  medium.com: 0.85
+  dev.to: 0.85
+  hackernoon.com: 0.80
+  analyticsvidhya.com: 0.80
+  towardsdatascience.com: 0.90

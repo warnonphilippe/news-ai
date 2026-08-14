@@ -16,11 +16,17 @@ import { Article } from '../../models/article.model';
           </a>
           <div class="card__meta">
             <span *ngIf="article.source">{{ article.source }}</span>
-            <span *ngIf="article.published_date">· {{ article.published_date }}</span>
+            <span *ngIf="ageLabel">· {{ ageLabel }}</span>
             <span *ngIf="article.topic_cluster" class="card__cluster">
               {{ article.topic_cluster }}
             </span>
             <span *ngIf="article.is_update_of" class="card__badge">Complète un sujet précédent</span>
+            <span
+              *ngIf="article.final_score !== null"
+              class="card__score"
+              [title]="scoreDetail"
+              >score {{ article.final_score }}</span
+            >
           </div>
         </div>
       </header>
@@ -50,4 +56,26 @@ import { Article } from '../../models/article.model';
 })
 export class DigestCardComponent {
   @Input({ required: true }) article!: Article;
+
+  /** Âge lisible ; retombe sur la date brute si l'âge est inconnu. */
+  get ageLabel(): string {
+    const age = this.article.age_days;
+    if (age === null || age === undefined) {
+      return this.article.published_date ? 'date inconnue' : '';
+    }
+    if (age <= 0) return "aujourd'hui";
+    if (age === 1) return 'hier';
+    return `il y a ${age} jours`;
+  }
+
+  /** Détail du calcul, affiché au survol du score. */
+  get scoreDetail(): string {
+    const a = this.article;
+    return (
+      `pertinence ${a.relevance ?? '?'}` +
+      ` × fraîcheur ${a.freshness_factor ?? '?'}` +
+      ` × source ${a.source_factor ?? '?'}` +
+      ` = ${a.final_score ?? '?'}`
+    );
+  }
 }

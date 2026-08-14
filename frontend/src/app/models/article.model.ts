@@ -17,6 +17,13 @@ export interface Article {
   links: Link[];
   is_update_of: number | null;
   rank: number;
+
+  /** Composantes du score de sélection (auditabilité). */
+  relevance: number | null;
+  age_days: number | null;
+  freshness_factor: number | null;
+  source_factor: number | null;
+  final_score: number | null;
 }
 
 export interface DigestResponse {

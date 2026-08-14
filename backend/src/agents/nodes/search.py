@@ -2,10 +2,12 @@
 
 import asyncio
 import logging
+from datetime import date, timedelta
 from typing import Any, Dict, List
 
 from src.agents.mcp_tools import search_brave, search_exa
 from src.agents.state import DigestState
+from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -13,11 +15,19 @@ logger = logging.getLogger(__name__)
 _RESULTS_PER_QUERY = 6
 
 
-async def _search_all(queries: List[str]) -> tuple[List[Dict[str, Any]], List[str]]:
+async def _search_all(
+    queries: List[str], start_published_date: str
+) -> tuple[List[Dict[str, Any]], List[str]]:
     """Execute toutes les requetes sur les deux providers, en concurrence."""
     tasks = []
     for q in queries:
-        tasks.append(search_exa(q, num_results=_RESULTS_PER_QUERY))
+        tasks.append(
+            search_exa(
+                q,
+                num_results=_RESULTS_PER_QUERY,
+                start_published_date=start_published_date,
+            )
+        )
         tasks.append(search_brave(q, count=_RESULTS_PER_QUERY))
 
     candidates: List[Dict[str, Any]] = []
@@ -34,7 +44,12 @@ def search(state: DigestState) -> DigestState:
     if not queries:
         return {"raw_candidates": [], "errors": ["search: aucune requete"]}
 
-    candidates, errors = asyncio.run(_search_all(queries))
+    # Contrainte de fraicheur envoyee a Exa (filtrage a la source).
+    reference = date.fromisoformat(state["run_date"])
+    since = (reference - timedelta(days=settings.search_window_days)).isoformat()
+    logger.info("search: articles publies depuis %s", since)
+
+    candidates, errors = asyncio.run(_search_all(queries, since))
 
     # Garde uniquement les candidats ayant une URL exploitable.
     candidates = [c for c in candidates if c.get("url")]

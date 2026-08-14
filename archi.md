@@ -68,11 +68,13 @@ news/
 │       │   ├── service.py         # cycle de vie d'un run (verrou → pipeline → statut)
 │       │   ├── mcp_tools.py       # accès MCP Exa + Brave (python-sdk mcp)
 │       │   ├── search_parse.py    # normalisation d'URL + parsing des résultats MCP
+│       │   ├── scoring.py         # dates, décote de fraîcheur, poids de source, score final
 │       │   └── nodes/             # un fichier par étape du pipeline
 │       │       ├── load_config.py
 │       │       ├── build_queries.py
 │       │       ├── search.py
 │       │       ├── dedupe.py
+│       │       ├── filter_recent.py
 │       │       ├── summarize.py
 │       │       ├── novelty_check.py
 │       │       ├── select.py
@@ -80,6 +82,7 @@ news/
 │       └── assets/
 │           ├── tags.txt                  # mots-clés du domaine
 │           ├── seed_queries.yaml         # requêtes seed (2 axes thématiques)
+│           ├── source_weights.yaml       # pondération des domaines (autorité)
 │           ├── summary_system_prompt.md  # prompt de résumé
 │           └── novelty_prompt.md         # prompt de jugement de nouveauté
 │
@@ -113,19 +116,52 @@ patch partiel de l'état.
 |---|------|------|----------------------------------|
 | 1 | `load_config` | Charge `tags.txt` et l'historique 14 j (depuis SQLite, **avant** la date du run) | `run_date` → `tags`, `recent_history`, `errors` |
 | 2 | `build_queries` | Combine les requêtes seed (2 axes) + une requête fondée sur les tags | `tags` → `queries` |
-| 3 | `search` | Lance chaque requête sur Exa **et** Brave, en concurrence (`asyncio.gather`) | `queries` → `raw_candidates`, `errors` |
+| 3 | `search` | Lance chaque requête sur Exa **et** Brave, en concurrence (`asyncio.gather`) ; Exa reçoit `startPublishedDate` (filtrage de fraîcheur à la source) | `queries` → `raw_candidates`, `errors` |
 | 4 | `dedupe` | Normalise les URLs, retire doublons inter-providers et articles déjà vus (14 j) | `raw_candidates`, `recent_history` → `deduped` |
-| 5 | `summarize` | Pour chaque candidat : résumé, « pourquoi », tags, cluster, pertinence (LLM, sortie structurée, concurrent) | `deduped` → `summarized` |
-| 6 | `novelty_check` | **Un seul** appel LLM classe chaque candidat `NEW` / `DUPLICATE` / `UPDATE` vs l'historique | `summarized`, `recent_history` → `summarized` (annoté) |
-| 7 | `select_top` | Écarte les `DUPLICATE`, trie par pertinence puis récence, garde `MAX_ARTICLES_PER_DAY` | `summarized` → `selected` |
-| 8 | `persist` | Écrit les articles retenus dans SQLite | `selected` → ∅ |
+| 5 | `filter_recent` | Applique la fenêtre de fraîcheur (Brave ne filtre pas à la source) et **ordonne du plus frais au plus ancien** | `deduped` → `deduped` (filtré, trié, `age_days`) |
+| 6 | `summarize` | Pour chaque candidat : résumé, « pourquoi », tags, cluster, pertinence (LLM, sortie structurée, concurrent) | `deduped` → `summarized` |
+| 7 | `novelty_check` | **Un seul** appel LLM classe chaque candidat `NEW` / `DUPLICATE` / `UPDATE` vs l'historique | `summarized`, `recent_history` → `summarized` (annoté) |
+| 8 | `select_top` | Écarte les `DUPLICATE`, calcule le **score pondéré** et garde `MAX_ARTICLES_PER_DAY` | `summarized` → `selected` |
+| 9 | `persist` | Écrit les articles retenus **et les composantes du score** dans SQLite | `selected` → ∅ |
 
 **Dégradation gracieuse** : chaque source de recherche capture ses erreurs
 (timeout, `npx` absent, clé manquante) et retourne une liste vide + un message
 dans `errors`, sans interrompre le pipeline. De même, `novelty_check` retombe
 sur « tout est NEW » si l'appel LLM échoue.
 
-### 3.2 Cycle de vie d'un run (`agents/service.py`)
+### 3.2 Critères de sélection (`agents/scoring.py`)
+
+Le classement final **n'utilise pas la pertinence brute du LLM seule** : celle-ci
+est pondérée par deux facteurs objectifs.
+
+```
+score_final = relevance (LLM, 0-100)
+            × facteur_fraîcheur        (décote d'ancienneté)
+            × facteur_source           (autorité du domaine)
+```
+
+| Composante | Origine | Détail |
+|---|---|---|
+| `relevance` | LLM (`ArticleSummary.relevance`) | 0–100, jugé sur titre + extrait, pour l'audience « IA for DEV » Java/Python |
+| `facteur_fraîcheur` | calculé | 1.0 à ≤ 1 j → décroissance linéaire jusqu'à 0.6 en fin de fenêtre → plancher 0.25 au-delà. Article sans date exploitable : `UNDATED_FRESHNESS_FACTOR` (0.75) |
+| `facteur_source` | `assets/source_weights.yaml` | match par **suffixe** de domaine (`blog.jetbrains.com` hérite de `jetbrains.com`). > 1 pour les sources primaires (éditeurs, docs officielles), < 1 pour les agrégateurs / contenus SEO |
+
+**Fenêtre de fraîcheur** (`SEARCH_WINDOW_DAYS`, 7 j par défaut) : appliquée deux
+fois — à la source via `startPublishedDate` (Exa) et uniformément par le node
+`filter_recent` (nécessaire car Brave ne la supporte pas). Un **repli** évite un
+digest vide : si trop peu d'articles entrent dans la fenêtre, les moins anciens
+complètent la liste (ils restent pénalisés au scoring).
+
+**Auditabilité** : les quatre composantes (`relevance`, `age_days`,
+`freshness_factor`, `source_factor`) sont persistées avec `final_score`, exposées
+par l'API et affichées dans l'UI (badge « score », détail au survol).
+
+**Parsing des dates** : les sources renvoient des formats hétérogènes — ISO 8601
+(`2026-08-13T00:00:00.000Z`), `YYYY-MM-DD`, relatif (`3 days ago`), ou `N/A`.
+`scoring.parse_published()` les normalise ; une date illisible donne `None`
+(article conservé mais pénalisé), jamais une erreur.
+
+### 3.3 Cycle de vie d'un run (`agents/service.py`)
 
 ```
 run_daily_digest(repo, force)
@@ -138,7 +174,7 @@ run_daily_digest(repo, force)
 L'idempotence « une fois par jour » repose sur la **clé primaire `run_date`** de
 la table `runs` : `INSERT OR IGNORE` garantit qu'un seul process démarre le run.
 
-### 3.3 Persistance SQLite (`db/`)
+### 3.4 Persistance SQLite (`db/`)
 
 `sqlite3` de la stdlib (aucun service externe, portable, fichier unique).
 
@@ -146,12 +182,17 @@ la table `runs` : `INSERT OR IGNORE` garantit qu'un seul process démarre le run
   (`running`/`done`/`error`), horodatages, erreur.
 - **`articles`** : url, `normalized_url` (dédup), titre, résumé,
   `why_it_matters`, source, date, `tags_json`, `topic_cluster`, `links_json`,
-  `is_update_of` (FK vers l'article complété), `rank`.
+  `is_update_of` (FK vers l'article complété), `rank`, et les composantes du
+  score : `relevance`, `age_days`, `freshness_factor`, `source_factor`,
+  `final_score`.
 - Historique 14 j : `WHERE run_date >= date('now','-14 day')`.
 - Une **connexion courte par opération** (pas d'état partagé) → robuste avec les
   `BackgroundTasks` FastAPI.
+- **Migrations** : `models._migrate()` ajoute en `ALTER TABLE` les colonnes
+  introduites après coup (idempotent), ce qui préserve l'historique des bases
+  existantes.
 
-### 3.4 Recherche via MCP (`agents/mcp_tools.py`, `search_parse.py`)
+### 3.5 Recherche via MCP (`agents/mcp_tools.py`, `search_parse.py`)
 
 Les serveurs MCP sont lancés **à la demande** via `npx` (aucune installation
 préalable) et pilotés par le **python-sdk `mcp`** (`StdioServerParameters` +
@@ -168,7 +209,7 @@ parseur `search_parse.py` :
 - normalise les URLs (retrait `www.`/fragments/paramètres de tracking, tri des
   paramètres) pour produire une **clé de déduplication stable**.
 
-### 3.5 LLM (`config/llm_config.py`)
+### 3.6 LLM (`config/llm_config.py`)
 
 `AzureChatOpenAI` (LangChain) sur le déploiement **`gpt-5-chat`**. Deux usages :
 - **Résumé** : `chain = prompt | llm.with_structured_output(ArticleSummary)` →
@@ -179,7 +220,7 @@ parseur `search_parse.py` :
 > `get_llm()` ne transmet donc `temperature` que si elle est explicitement
 > fournie.
 
-### 3.6 API REST (`api/routes.py`)
+### 3.7 API REST (`api/routes.py`)
 
 | Méthode | Route | Rôle |
 |---|---|---|
@@ -245,6 +286,10 @@ Ports surchargeables via `BACKEND_PORT` / `FRONTEND_PORT`.
 | **Angular + Vite (`ng serve`)** | React/Vue | Choix explicite de l'utilisateur ; base Vite conservée via le dev-server Angular. |
 | **`run.py` en stdlib pure** | script dans chaque shell | Une seule logique health/run/navigateur, portable mac/linux/windows, appelable hors venv. |
 | **Idempotence par clé primaire `run_date`** | fichier lock / drapeau | Atomique, sans course, survit aux redémarrages. |
+| **Score = relevance × fraîcheur × source** | pertinence LLM brute | La pertinence seule laissait remonter des articles vieux de plusieurs mois. La pondération multiplicative garde une échelle lisible et des composantes auditables séparément. |
+| **Pondération de source en YAML** | liste en dur / ML | Ajustable par le développeur sans toucher au code, et assumée comme un choix éditorial explicite plutôt que caché. |
+| **Fenêtre appliquée 2 fois** (Exa + `filter_recent`) | uniquement à la source | Brave ne supporte pas `startPublishedDate` : sans le node, la moitié du vivier échapperait au filtre. |
+| **Repli si trop peu d'articles frais** | fenêtre stricte | Évite un digest vide un jour creux ; les articles de repli restent pénalisés au score. |
 
 ---
 
@@ -257,9 +302,11 @@ Fichier `backend/.env` (voir `.env.example`) — **gitignoré** :
 | `AZURE_OPENAI_ENDPOINT` / `_API_KEY` / `_CHAT_DEPLOYMENT` / `_API_VERSION` | LLM Azure OpenAI |
 | `EXA_API_KEY` / `BRAVE_API_KEY` | recherche |
 | `MAX_ARTICLES_PER_DAY` (5) · `HISTORY_DAYS` (14) · `SEARCH_WINDOW_DAYS` (7) | réglages métier |
+| `UNDATED_FRESHNESS_FACTOR` (0.75) | pénalité des articles sans date exploitable |
 
-Domaine de veille ajustable sans code : `backend/src/assets/tags.txt` et
-`seed_queries.yaml`.
+Ajustable sans code, dans `backend/src/assets/` : `tags.txt` (mots-clés),
+`seed_queries.yaml` (requêtes, 2 axes) et `source_weights.yaml` (autorité des
+domaines).
 
 ---
 
@@ -279,10 +326,34 @@ Exa), `@modelcontextprotocol/server-brave-search`.
 
 ## 9. Limites connues
 
+### Sur la qualité de la sélection
+
+- **Pertinence non calibrée entre articles.** Chaque candidat est noté dans un
+  appel LLM **isolé** : le modèle ne voit jamais les autres candidats. En
+  pratique les notes se tassent (mesuré : 82–95, écart-type 4.3), si bien que la
+  pertinence discrimine *moins* que les facteurs de fraîcheur et de source.
+  Un scoring **comparatif** (un seul appel classant tous les candidats) est la
+  correction naturelle.
+- **Aucun signal de qualité objectif.** Vérifié : ni Exa (via MCP) ni Brave ne
+  renvoient de score — Exa expose `Title/URL/Published/Author/Highlights/Text`,
+  Brave `Title/Description/URL`. Aucune évaluation communautaire (points Hacker
+  News, étoiles GitHub, citations) n'est consultée.
+- **`source_weights.yaml` est un a priori éditorial**, pas une mesure : il juge
+  l'éditeur, pas l'article. Un billet faible sur un domaine bonifié reste bonifié.
+- **Jugement sur extrait** : le LLM ne lit jamais l'article complet, seulement le
+  titre et un extrait tronqué à 4000 caractères.
+- **Troncature avant scoring** : seuls les `MAX_ARTICLES_PER_DAY × 3` premiers
+  candidats sont résumés. `filter_recent` ordonne désormais le vivier par
+  fraîcheur, mais un bon article très en aval reste hors du champ.
+
+### Techniques
+
 - **Réseau + Node requis** : la recherche dépend de `npx` et d'un accès sortant ;
   pas de mode hors-ligne.
-- **Fraîcheur des dates** : certaines sources ne renvoient pas de date de
-  publication fiable (`N/A`) — géré, mais le tri par récence en pâtit alors.
+- **Dates hétérogènes** : `scoring.parse_published()` couvre ISO 8601,
+  `YYYY-MM-DD` et les formats relatifs ; toute date illisible donne `None`
+  (article conservé mais pénalisé par `UNDATED_FRESHNESS_FACTOR`).
 - **Coût LLM** : ~1 appel de résumé par candidat + 1 appel de nouveauté par run.
-  Le nombre de candidats résumés est plafonné (`MAX_ARTICLES_PER_DAY × 3`).
+- **Ressources complémentaires non implémentées** : `links_json` est toujours
+  vide (le modèle `ArticleSummary` n'a pas de champ `links`).
 - **Mono-utilisateur** : SQLite local, pas conçu pour un déploiement multi-postes.

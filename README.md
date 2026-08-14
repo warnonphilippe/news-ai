@@ -21,7 +21,11 @@ sélection courte à lire en **15 à 30 minutes**.
 - **Résumés générés par IA** : pour chaque article, un résumé factuel, une phrase
   « **pourquoi c'est important** pour un dev Java/Python », des tags et un thème.
 - **Sélection resserrée** : **5 articles par jour** (configurable), classés par
-  pertinence.
+  un score combinant **pertinence × fraîcheur × autorité de la source**.
+- **Articles récents uniquement** : seuls les articles publiés dans les 7 derniers
+  jours (configurable) sont retenus, avec un repli les jours creux.
+- **Score transparent** : chaque carte affiche son score ; le détail du calcul
+  (pertinence, fraîcheur, source) s'affiche au survol.
 - **Anti-redites sur 14 jours** : un article déjà présenté n'est pas remontré…
   - …**sauf** s'il **complète** de façon importante un sujet passé — il est alors
     affiché avec un badge « complète un sujet précédent ».
@@ -112,11 +116,31 @@ Réglages dans `backend/.env` :
 |---|---|---|
 | `MAX_ARTICLES_PER_DAY` | `5` | nombre d'articles présentés par jour |
 | `HISTORY_DAYS` | `14` | profondeur de l'historique / anti-redites |
-| `SEARCH_WINDOW_DAYS` | `7` | fenêtre de publication recherchée |
+| `SEARCH_WINDOW_DAYS` | `7` | âge maximum d'un article retenu (jours) |
+| `UNDATED_FRESHNESS_FACTOR` | `0.75` | pénalité des articles sans date exploitable |
 
 Le **domaine de veille** s'ajuste sans toucher au code :
 - `backend/src/assets/tags.txt` — mots-clés suivis ;
-- `backend/src/assets/seed_queries.yaml` — requêtes de recherche (2 axes).
+- `backend/src/assets/seed_queries.yaml` — requêtes de recherche (2 axes) ;
+- `backend/src/assets/source_weights.yaml` — pondération des sources : `> 1.0`
+  pour prioriser un domaine (éditeurs, docs officielles), `< 1.0` pour
+  rétrograder (agrégateurs). Le match se fait par suffixe de domaine.
+
+### Comment les 5 articles sont choisis
+
+```
+score final = pertinence (0-100, jugée par le LLM)
+            × facteur de fraîcheur (1.0 récent → 0.25 ancien)
+            × facteur de source    (source_weights.yaml)
+```
+
+Les articles hors fenêtre sont écartés en amont, puis les doublons des 14
+derniers jours, et enfin les 5 meilleurs scores sont retenus. Les composantes du
+score sont conservées en base et consultables dans l'UI.
+
+> Limite à connaître : la pertinence est un jugement du LLM sur un extrait, sans
+> évaluation externe (ni score fournisseur, ni signal communautaire). Voir
+> [archi.md § 9](archi.md) pour le détail des limites.
 
 ---
 

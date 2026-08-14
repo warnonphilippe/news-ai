@@ -9,7 +9,7 @@ proprement au lieu de planter.
 import asyncio
 import logging
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -65,8 +65,17 @@ async def _run_with_timeout(coro, provider: str) -> Tuple[List[Dict[str, Any]], 
         return [], [msg]
 
 
-async def search_exa(query: str, num_results: int = 8) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """Recherche semantique via le serveur MCP Exa (mcp-remote)."""
+async def search_exa(
+    query: str,
+    num_results: int = 8,
+    start_published_date: Optional[str] = None,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Recherche semantique via le serveur MCP Exa (mcp-remote).
+
+    `start_published_date` (ISO 'YYYY-MM-DD') contraint la recherche aux
+    articles publies depuis cette date : la fraicheur est ainsi filtree
+    a la source, avant meme de consommer des appels LLM.
+    """
     if not settings.exa_api_key:
         return [], ["exa: cle EXA_API_KEY absente"]
 
@@ -79,10 +88,14 @@ async def search_exa(query: str, num_results: int = 8) -> Tuple[List[Dict[str, A
         ],
         env=os.environ.copy(),
     )
+    arguments: Dict[str, Any] = {"query": query, "numResults": num_results}
+    if start_published_date:
+        arguments["startPublishedDate"] = start_published_date
+
     coro = _call_mcp_tool(
         server_params,
         preferred_tools=["web_search_exa", "search"],
-        arguments_for={"query": query, "numResults": num_results},
+        arguments_for=arguments,
         provider="exa",
     )
     return await _run_with_timeout(coro, "exa")
