@@ -4,8 +4,9 @@ export interface Link {
 }
 
 export interface Article {
-  id: number;
-  run_date: string;
+  /** null pour un article de recherche personnalisee (jamais persiste). */
+  id: number | null;
+  run_date: string | null;
   url: string;
   title: string;
   summary: string;
@@ -46,4 +47,10 @@ export interface RunResponse {
   run_date: string;
   status: string;
   action: string;
+}
+
+export interface CustomSearchResponse {
+  query: string;
+  count: number;
+  articles: Article[];
 }

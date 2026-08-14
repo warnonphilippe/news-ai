@@ -104,6 +104,13 @@ body {
   gap: 16px;
   margin-bottom: 20px;
 }
+.digest__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .digest__title {
   margin: 0 0 4px;
   font-size: 22px;
@@ -139,6 +146,41 @@ body {
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.btn--ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn--ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --- Recherche personnalisee --- */
+.search-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.search-bar__input {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: 14px;
+}
+.search-bar__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.search-bar__input::placeholder {
+  color: var(--muted);
+}
+.search-bar__input:disabled {
+  opacity: 0.6;
 }
 
 /* --- Cards --- */

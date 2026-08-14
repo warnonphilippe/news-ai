@@ -21,6 +21,7 @@ def get_llm(temperature: float | None = None) -> AzureChatOpenAI:
         api_version=settings.azure_openai_api_version,
         api_key=settings.azure_openai_api_key,
         model_name=settings.azure_openai_chat_deployment,
+        timeout=settings.llm_timeout,
     )
     if temperature is not None:
         kwargs["temperature"] = temperature

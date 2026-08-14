@@ -31,6 +31,19 @@ class Settings(BaseSettings):
         default=7, description="Fenetre de fraicheur : age max d'un article, en jours"
     )
     mcp_timeout: int = Field(default=60)
+    llm_timeout: int = Field(
+        default=45,
+        description="Timeout (s) des appels LLM (resume, notation) — evite un hang indefini",
+    )
+
+    # --- Recherche personnalisee (critere libre, non persistee) ---
+    custom_search_window_days: int = Field(
+        default=30,
+        description="Fenetre de fraicheur pour la recherche personnalisee (plus large que la quotidienne)",
+    )
+    custom_search_max_results: int = Field(
+        default=10, description="Nombre de resultats pour la recherche personnalisee"
+    )
 
     # --- Scoring ---
     undated_freshness_factor: float = Field(
@@ -49,6 +62,9 @@ class Settings(BaseSettings):
     seed_queries_file: Path = Field(default=ASSETS_DIR / "seed_queries.yaml")
     source_weights_file: Path = Field(default=ASSETS_DIR / "source_weights.yaml")
     relevance_prompt_file: Path = Field(default=ASSETS_DIR / "relevance_prompt.md")
+    custom_relevance_prompt_file: Path = Field(
+        default=ASSETS_DIR / "custom_relevance_prompt.md"
+    )
 
     model_config = SettingsConfigDict(
         env_file=str(BACKEND_ROOT / ".env"),

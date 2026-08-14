@@ -46,9 +46,12 @@ def search(state: DigestState) -> DigestState:
     if not queries:
         return {"raw_candidates": [], "errors": ["search: aucune requete"]}
 
-    # Contrainte de fraicheur envoyee a Exa (filtrage a la source).
+    # Contrainte de fraicheur envoyee a Exa (filtrage a la source). Fallback :
+    # absent du graphe quotidien, present dans le graphe de recherche
+    # personnalisee (fenetre plus large, cf. build_custom_graph).
+    window = state.get("search_window_days") or settings.search_window_days
     reference = date.fromisoformat(state["run_date"])
-    since = (reference - timedelta(days=settings.search_window_days)).isoformat()
+    since = (reference - timedelta(days=window)).isoformat()
     logger.info("search: articles publies depuis %s", since)
 
     candidates, errors = asyncio.run(_search_all(queries, since))

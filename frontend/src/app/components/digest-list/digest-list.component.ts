@@ -2,11 +2,12 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Article } from '../../models/article.model';
 import { DigestCardComponent } from '../digest-card/digest-card.component';
+import { ExportButtonComponent } from '../export-button/export-button.component';
 
 @Component({
   selector: 'app-digest-list',
   standalone: true,
-  imports: [CommonModule, DigestCardComponent],
+  imports: [CommonModule, DigestCardComponent, ExportButtonComponent],
   template: `
     <section class="digest">
       <header class="digest__head">
@@ -22,13 +23,19 @@ import { DigestCardComponent } from '../digest-card/digest-card.component';
             </ng-container>
           </p>
         </div>
-        <button
-          class="btn"
-          [disabled]="status === 'running' || !isToday"
-          (click)="run.emit()"
-        >
-          {{ status === 'running' ? '…' : 'Rechercher aujourd’hui' }}
-        </button>
+        <div class="digest__actions">
+          <app-export-button
+            [articles]="articles"
+            [contextLabel]="'Sélection du ' + runDate"
+          ></app-export-button>
+          <button
+            class="btn"
+            [disabled]="status === 'running' || !isToday"
+            (click)="run.emit()"
+          >
+            {{ status === 'running' ? '…' : 'Rechercher aujourd’hui' }}
+          </button>
+        </div>
       </header>
 
       <div *ngIf="status === 'running'" class="digest__loading">

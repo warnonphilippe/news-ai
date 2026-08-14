@@ -18,6 +18,14 @@ class DigestState(TypedDict, total=False):
     selected: List[Dict[str, Any]]            # <= max_articles_per_day
     errors: List[str]
 
+    # --- Recherche personnalisee (optionnel) ---
+    # Presents uniquement dans le graphe custom (build_custom_graph). Absents
+    # du graphe quotidien : les nodes partages retombent alors sur les
+    # settings globaux (state.get(...) or settings.X), sans branchement.
+    custom_query: Optional[str]
+    search_window_days: Optional[int]         # remplace settings.search_window_days
+    max_articles: Optional[int]               # remplace settings.max_articles_per_day
+
 
 # ---------------------------------------------------------------- summarize
 

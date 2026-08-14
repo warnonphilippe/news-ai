@@ -29,7 +29,12 @@ def _sort_key(article: Dict[str, Any]):
 
 
 def filter_recent(state: DigestState) -> DigestState:
-    window = settings.search_window_days
+    # Fallback : state["search_window_days"]/["max_articles"] n'existent que
+    # dans le graphe de recherche personnalisee (build_custom_graph) ; le
+    # graphe quotidien ne les definissant jamais, ce node reste inchange pour
+    # ce dernier.
+    window = state.get("search_window_days") or settings.search_window_days
+    max_articles = state.get("max_articles") or settings.max_articles_per_day
     reference = date.fromisoformat(state["run_date"])
 
     fresh: List[Dict[str, Any]] = []
@@ -47,9 +52,9 @@ def filter_recent(state: DigestState) -> DigestState:
 
     # Repli : si trop peu d'articles frais, on complete avec les moins anciens
     # pour ne pas presenter un digest vide (ils resteront penalises au scoring).
-    if len(fresh) < settings.max_articles_per_day and stale:
+    if len(fresh) < max_articles and stale:
         stale.sort(key=_sort_key)
-        missing = settings.max_articles_per_day - len(fresh)
+        missing = max_articles - len(fresh)
         fresh.extend(stale[:missing])
         logger.info(
             "filter_recent: seulement %d articles dans la fenetre de %dj, "

@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  CustomSearchResponse,
   DigestResponse,
   HistoryDay,
   RunResponse,
@@ -30,5 +31,9 @@ export class DigestService {
       `${this.base}/run${force ? '?force=true' : ''}`,
       {},
     );
+  }
+
+  searchCustom(query: string): Observable<CustomSearchResponse> {
+    return this.http.post<CustomSearchResponse>(`${this.base}/search`, { query });
   }
 }

@@ -25,13 +25,16 @@ def select_top(state: DigestState) -> DigestState:
         if c.get("novelty") in ("NEW", "UPDATE")
     ]
 
+    # Fallback : n'existe que pour la recherche personnalisee (build_custom_graph);
+    # absent du graphe quotidien, ce node reste inchange pour ce dernier.
     reference = date.fromisoformat(state["run_date"])
-    window = settings.search_window_days
+    window = state.get("search_window_days") or settings.search_window_days
+    max_articles = state.get("max_articles") or settings.max_articles_per_day
     for cand in candidates:
         cand.update(compute_score(cand, reference, window))
 
     candidates.sort(key=lambda a: a.get("final_score", 0), reverse=True)
-    selected = candidates[: settings.max_articles_per_day]
+    selected = candidates[:max_articles]
 
     if selected:
         logger.info(

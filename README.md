@@ -34,6 +34,13 @@ sélection courte à lire en **15 à 30 minutes**.
   instantanément la sélection sans relancer de recherche.
 - **UI web sobre** : cartes lisibles, liens vers les sources, thème clair/sombre
   automatique.
+- **Recherche personnalisée** : un champ texte permet de taper un critère libre
+  (domaine, sujet, question) pour une recherche ponctuelle sur les mêmes sources
+  (Exa + Brave), où la correspondance à ce critère prime sur tout le reste.
+  Jamais sauvegardée, sans effet sur le digest du jour ni sur l'historique.
+- **Export Markdown** : n'importe quelle liste affichée (digest du jour, digest
+  d'une date passée, ou recherche personnalisée) s'exporte en un clic dans un
+  fichier `.md` téléchargé.
 - **Lancement en une commande**, portable après un simple `git clone`
   (macOS/Linux **et** Windows).
 
@@ -105,6 +112,34 @@ BACKEND_PORT=8100 FRONTEND_PORT=4300 ./start.sh
   le run automatique a échoué) ; une recherche prend en général **1 à 3 minutes**.
 - La **barre latérale « Historique »** liste les 14 derniers jours ; cliquez une
   date pour revoir sa sélection.
+- Le bouton **« Exporter (.md) »**, présent sur chaque liste (digest ou
+  recherche), télécharge son contenu au format Markdown.
+
+---
+
+## Recherche personnalisée
+
+Un champ de texte, toujours visible en haut de l'écran, permet de lancer une
+recherche ponctuelle sur un critère libre (domaine, sujet, ou question) :
+
+```
+Rechercher un sujet, une question… (ex : « RAG avec pgvector en production »)
+```
+
+Contrairement au digest du jour :
+
+- la **correspondance au critère** devient le facteur dominant du classement
+  (au lieu des ancres fixes de la veille générale) — un garde-fou reste actif
+  pour écarter les résultats sans aucun rapport avec l'IA/l'outillage de dev,
+  même s'ils correspondent au critère au sens large ;
+- la fenêtre de fraîcheur est plus large (**30 jours** par défaut, contre 7) et
+  la sélection plus large (**10 résultats** par défaut, contre 5) — un sujet ou
+  une question mérite souvent plus de recul qu'une actualité du jour ;
+- le résultat **n'est jamais sauvegardé** : il n'apparaît pas dans l'historique,
+  n'affecte pas l'anti-redite des jours suivants, et disparaît si vous
+  relancez une autre recherche ou revenez au digest du jour.
+
+Réglages dans `backend/.env` : `CUSTOM_SEARCH_WINDOW_DAYS`, `CUSTOM_SEARCH_MAX_RESULTS`.
 
 ---
 
@@ -119,6 +154,9 @@ Réglages dans `backend/.env` :
 | `SEARCH_WINDOW_DAYS` | `7` | âge maximum d'un article retenu (jours) |
 | `UNDATED_FRESHNESS_FACTOR` | `0.75` | pénalité des articles sans date exploitable |
 | `ENABLE_HN_SIGNAL` | `true` | interroger Hacker News pour la pondération communautaire |
+| `LLM_TIMEOUT` | `45` | timeout (s) des appels LLM |
+| `CUSTOM_SEARCH_WINDOW_DAYS` | `30` | fenêtre de fraîcheur pour la recherche personnalisée |
+| `CUSTOM_SEARCH_MAX_RESULTS` | `10` | nombre de résultats pour la recherche personnalisée |
 
 Le **domaine de veille** s'ajuste sans toucher au code :
 - `backend/src/assets/tags.txt` — mots-clés suivis ;

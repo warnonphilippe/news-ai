@@ -24,9 +24,12 @@ CONTENU (extrait):
 """
 
 
-def _cap() -> int:
+def _cap(state: DigestState) -> int:
     # On resume un peu plus que le quota final pour laisser le choix au tri.
-    return max(settings.max_articles_per_day * 3, 9)
+    # Fallback : state["max_articles"] n'existe que pour la recherche
+    # personnalisee ; absent, le graphe quotidien est inchange.
+    max_articles = state.get("max_articles") or settings.max_articles_per_day
+    return max(max_articles * 3, 9)
 
 
 async def _summarize_all(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -66,7 +69,7 @@ async def _summarize_all(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any
 
 
 def summarize(state: DigestState) -> DigestState:
-    candidates = state.get("deduped", [])[: _cap()]
+    candidates = state.get("deduped", [])[: _cap(state)]
     if not candidates:
         return {"summarized": []}
     summarized = asyncio.run(_summarize_all(candidates))

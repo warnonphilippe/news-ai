@@ -71,14 +71,16 @@ news/
 │       │   ├── scoring.py         # dates, décote de fraîcheur, poids de source, score final
 │       │   ├── community.py       # signal Hacker News (API Algolia)
 │       │   └── nodes/             # un fichier par étape du pipeline
-│       │       ├── load_config.py
+│       │       ├── load_config.py            # + load_config_custom (recherche personnalisée)
 │       │       ├── build_queries.py
+│       │       ├── build_custom_queries.py   # requêtes recherche personnalisée
 │       │       ├── search.py
 │       │       ├── dedupe.py
 │       │       ├── filter_recent.py
 │       │       ├── summarize.py
 │       │       ├── novelty_check.py
 │       │       ├── rank_relevance.py
+│       │       ├── rank_relevance_custom.py  # notation recherche personnalisée
 │       │       ├── community_signal.py
 │       │       ├── select.py
 │       │       └── persist.py
@@ -87,7 +89,8 @@ news/
 │           ├── seed_queries.yaml         # requêtes seed (2 axes thématiques)
 │           ├── source_weights.yaml       # pondération des domaines (autorité)
 │           ├── summary_system_prompt.md  # prompt de résumé
-│           ├── relevance_prompt.md       # grille de notation comparative
+│           ├── relevance_prompt.md       # grille de notation comparative (digest quotidien)
+│           ├── custom_relevance_prompt.md# grille de notation (recherche personnalisée)
 │           └── novelty_prompt.md         # prompt de jugement de nouveauté
 │
 └── frontend/                      # === Angular v20 (TypeScript) ===
@@ -97,13 +100,17 @@ news/
         ├── main.ts / index.html / styles.css
         └── app/
             ├── app.config.ts      # providers (HttpClient, zone)
-            ├── app.component.ts    # état global : today, historique, polling, sélection
+            ├── app.component.ts    # état global : today, historique, polling, mode daily/custom
             ├── models/article.model.ts
             ├── services/digest.service.ts    # appels HttpClient vers /api
+            ├── utils/markdown-export.ts      # fonctions pures : slugify, buildDigestMarkdown, downloadMarkdown
             └── components/
-                ├── digest-list/    # les N cartes + bouton run + statut
-                ├── digest-card/    # une carte article
-                └── history-sidebar/# 14 derniers jours
+                ├── digest-list/            # les N cartes du digest + bouton run + statut
+                ├── digest-card/            # une carte article
+                ├── history-sidebar/        # 14 derniers jours
+                ├── export-button/          # bouton d'export .md (reutilise par digest-list et custom-search-results)
+                ├── custom-search-bar/      # champ texte + bouton, toujours visible
+                └── custom-search-results/  # affichage des resultats de recherche personnalisee
 ```
 
 ---
@@ -279,6 +286,75 @@ parseur `search_parse.py` :
 `POST /run` retourne immédiatement (`running`/`skipped`) ; le frontend **poll**
 ensuite `/digest/today` jusqu'à `done`.
 
+### 3.8 Recherche personnalisée (`build_custom_graph`, `run_custom_search`)
+
+Un critère de recherche libre (phrase de l'utilisateur) déclenche une recherche
+**ponctuelle et jamais persistée**, où la correspondance à ce critère prime sur
+les repères habituels. Décision d'architecture : **un second graphe LangGraph
+compilé séparément** (`build_custom_graph` dans `graph.py`), plutôt que des
+branchements `if custom_query` dans les nodes du graphe quotidien.
+
+**Pourquoi deux graphes plutôt qu'un seul piloté par état** : `build_graph()` /
+`run_digest()` restent à **zéro diff** — la non-régression du pipeline
+quotidien est donc garantie par construction (visible dans le diff git), pas
+seulement vérifiée à l'œil. En traçant le pipeline, seuls 2 nodes sont
+réellement différents entre les deux flux :
+
+| Node | Digest quotidien | Recherche personnalisée |
+|---|---|---|
+| `load_config` | charge tags + historique 14j | charge tags, **historique vide** |
+| `build_queries` | requêtes seed (2 axes) | 1-2 requêtes dérivées du critère libre |
+| `rank_relevance` | ancres fixes (comparabilité inter-jours) | **correspondance au critère** (axe dominant) |
+| `persist` | écrit en SQLite | *(absent du graphe — rien n'est sauvegardé)* |
+
+Les 7 autres nodes (`search`, `dedupe`, `filter_recent`, `summarize`,
+`novelty_check`, `community_signal`, `select_top`) sont **réutilisés tels
+quels**, via une seule généralisation transverse : `state.get("search_window_days")
+or settings.search_window_days` (et pareil pour `max_articles_per_day`) au lieu
+d'une lecture directe de `settings.X`. C'est un **fallback**, pas un
+branchement conditionnel — l'état initial de `run_digest` ne définissant jamais
+ces clés, le chemin quotidien reste prouvé identique.
+
+**Effet de bord gratuit** : ne pas peupler `recent_history` dans
+`load_config_custom` suffit à obtenir, sans toucher `dedupe.py` ni
+`novelty_check.py` :
+- aucun article n'est écarté au motif qu'il a déjà été montré dans un digest
+  quotidien (l'exigence produit est que le critère prime, pas l'anti-redite) ;
+- `novelty_check` emprunte son court-circuit existant (« pas d'historique →
+  tout est NEW ») sans appel LLM supplémentaire.
+
+**Garde-fou de périmètre** (`custom_relevance_prompt.md`) : un critère de
+recherche peut légitimement correspondre à un article **hors du thème IA-for-
+DEV** (ex. « Kubernetes networking » remonte de la doc CNI générique). Le
+prompt impose une procédure en deux étapes strictement séquentielles : (1)
+l'article a-t-il un angle IA/outillage dev ? Si non, plafond dur à 20, sans
+considérer la correspondance. (2) seulement alors, noter la correspondance au
+critère. **Mesuré** : sans cette séquence explicite (une seule règle énoncée en
+prose), le LLM privilégiait la correspondance et laissait passer des articles
+100 % hors sujet à 90+. Avec la procédure en 2 étapes forcées, les mêmes
+articles retombent à 11-20 avec la justification explicite « hors périmètre
+IA-for-dev ».
+
+**Endpoint** : `POST /api/search`, body `{query: str}` (1-300 caractères).
+Exécution **synchrone** (pas de `BackgroundTasks`/polling — app locale
+mono-utilisateur, résultat éphémère donc rien à relire entre deux requêtes).
+Point d'implémentation critique : la route est déclarée `def` et non
+`async def` — `search()`/`summarize()` appellent `asyncio.run()` en interne, ce
+qui lève `RuntimeError` dans un handler déjà exécuté dans la boucle
+d'événements. En `def` classique, Starlette dispatch vers un threadpool (même
+mécanisme que `BackgroundTasks.add_task` pour `/run`).
+
+**Durcissement associé** : aucun appel LLM n'avait de timeout avant cette
+fonctionnalité (`search()` est bornée par `mcp_timeout`, mais pas
+`summarize`/`rank_relevance*`) — un hoquet réseau Azure pouvait faire pendre la
+réponse HTTP indéfiniment. `get_llm()` passe désormais `timeout=settings.llm_timeout`
+(45 s par défaut) à `AzureChatOpenAI`.
+
+Fenêtre de fraîcheur et quota par défaut plus larges que le digest quotidien
+(`CUSTOM_SEARCH_WINDOW_DAYS=30`, `CUSTOM_SEARCH_MAX_RESULTS=10`) — un sujet ou
+une question mérite plus de recul qu'une actualité du jour. Non réglable dans
+l'UI pour cette version (uniquement via `.env`).
+
 ---
 
 ## 4. Frontend
@@ -297,6 +373,21 @@ ensuite `/digest/today` jusqu'à `done`.
     sujet précédent » si `is_update_of`, résumé, « pourquoi c'est important »,
     tags, liens.
   - `history-sidebar` — 14 derniers jours cliquables (recharge `digest/{date}`).
+  - `custom-search-bar` — champ texte (300 car. max) + bouton, toujours visible,
+    émet la phrase saisie ; ne connaît rien du mode d'affichage.
+  - `custom-search-results` — composant **dédié**, pas de réutilisation des
+    `@Input()` de `digest-list` (pour ne courir aucun risque de régression
+    visuelle sur le digest quotidien). En-tête « Recherche : « … » », état de
+    chargement/erreur, cartes, export, lien de retour.
+  - `export-button` — composant pur réutilisé par `digest-list` **et**
+    `custom-search-results` : génère le Markdown (`utils/markdown-export.ts`)
+    et déclenche un téléchargement (`Blob` + `<a download>`), **entièrement
+    côté client** (aucun endpoint backend dédié — les données affichées
+    suffisent).
+- `app.component` bascule entre les deux vues via un état `mode: 'daily' |
+  'custom'` ; sélectionner une date dans l'historique repasse en mode `daily`.
+  Une `Subscription` annulable évite qu'une réponse tardive d'une recherche
+  personnalisée n'écrase un résultat plus récent.
 - Thème clair/sombre automatique (`prefers-color-scheme`), CSS unique sans
   dépendance externe.
 
@@ -336,6 +427,9 @@ Ports surchargeables via `BACKEND_PORT` / `FRONTEND_PORT`.
 | **Pondération de source en YAML** | liste en dur / ML | Ajustable par le développeur sans toucher au code, et assumée comme un choix éditorial explicite plutôt que caché. |
 | **Fenêtre appliquée 2 fois** (Exa + `filter_recent`) | uniquement à la source | Brave ne supporte pas `startPublishedDate` : sans le node, la moitié du vivier échapperait au filtre. |
 | **Repli si trop peu d'articles frais** | fenêtre stricte | Évite un digest vide un jour creux ; les articles de repli restent pénalisés au score. |
+| **Deux graphes séparés** (recherche personnalisée) | branchements `if custom_query` dans les nodes partagés | Non-régression structurelle : `build_graph`/`run_digest` restent à zéro diff, garantie par le diff git et non par relecture attentive de chaque node. |
+| **Recherche personnalisée synchrone** | `BackgroundTasks` + polling (comme `/run`) | Résultat éphémère (jamais persisté) : rien à relire entre deux requêtes, donc pas de bénéfice à l'asynchrone pour une app locale mono-utilisateur. |
+| **Export Markdown 100 % client** | endpoint backend dédié | Les données affichées suffisent ; évite un aller-retour réseau et un endpoint supplémentaire à maintenir. |
 
 ---
 
@@ -349,10 +443,13 @@ Fichier `backend/.env` (voir `.env.example`) — **gitignoré** :
 | `EXA_API_KEY` / `BRAVE_API_KEY` | recherche |
 | `MAX_ARTICLES_PER_DAY` (5) · `HISTORY_DAYS` (14) · `SEARCH_WINDOW_DAYS` (7) | réglages métier |
 | `UNDATED_FRESHNESS_FACTOR` (0.75) | pénalité des articles sans date exploitable |
+| `LLM_TIMEOUT` (45) | timeout (s) des appels LLM (résumé, notation) |
+| `CUSTOM_SEARCH_WINDOW_DAYS` (30) · `CUSTOM_SEARCH_MAX_RESULTS` (10) | recherche personnalisée |
 
 Ajustable sans code, dans `backend/src/assets/` : `tags.txt` (mots-clés),
-`seed_queries.yaml` (requêtes, 2 axes) et `source_weights.yaml` (autorité des
-domaines).
+`seed_queries.yaml` (requêtes, 2 axes), `source_weights.yaml` (autorité des
+domaines) et `custom_relevance_prompt.md` (grille de la recherche
+personnalisée, y compris le garde-fou de périmètre).
 
 ---
 
@@ -402,6 +499,18 @@ Exa), `@modelcontextprotocol/server-brave-search`.
 - Étoiles GitHub pour les articles pointant vers un dépôt.
 - Lecture de l'article complet (au lieu de l'extrait) avant notation.
 - Scoring de tout le vivier plutôt que des 15 premiers.
+
+### Sur la recherche personnalisée
+
+- **Le garde-fou de périmètre est un comportement de prompt, pas une garantie
+  structurelle.** La procédure en deux étapes forcées (§ 3.8) corrige un
+  contournement observé lors des tests, mais rien n'empêche formellement le
+  LLM de s'en écarter sur une formulation de critère inhabituelle — pas de
+  filtre de code en aval qui rejetterait mécaniquement un score > 20 sans
+  angle IA détecté.
+- **Fenêtre/quota non réglables dans l'UI** : uniquement via `.env`
+  (`CUSTOM_SEARCH_WINDOW_DAYS`, `CUSTOM_SEARCH_MAX_RESULTS`), par choix pour
+  garder cette première version simple.
 
 ### Techniques
 
