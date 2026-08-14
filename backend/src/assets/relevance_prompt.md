@@ -22,6 +22,7 @@ Ces exemples sont des **points d'ancrage fixes**. Situe chaque candidat par rapp
 | **62** | Bon tutoriel sur un sujet déjà connu du lecteur, ou annonce mineure d'un outil (correctifs, petite option de configuration). |
 | **45** | Comparatif d'outils IA sans méthodologie ni chiffres, ou article de survol qui reformule des annonces déjà connues. |
 | **30** | Article « IA généraliste » (tendances du marché, adoption en entreprise, prospective) sans contenu technique actionnable. |
+| **20** | **Ressource permanente** : page de documentation, README de dépôt, page d'accueil de produit, tutoriel de référence. Contenu utile mais intemporel, qui ne relate aucune nouveauté. |
 | **12** | Actualité business ou financière (levée de fonds, valorisation, nomination), ou contenu purement promotionnel. |
 
 ## Critères de départage
@@ -34,6 +35,7 @@ Ces exemples sont des **points d'ancrage fixes**. Situe chaque candidat par rapp
 
 ## Règles de notation
 
+- **Ce digest présente ce qui a CHANGÉ, pas ce qui existe.** Une ressource permanente — documentation, README de dépôt, page produit, tutoriel de référence — n'annonce aucune nouveauté : quelle que soit sa qualité et même si elle est parfaitement dans le sujet, note-la **au maximum 25**. Indices : pas de date de publication, titre sans verbe d'annonce, URL de type `docs.*` ou racine d'un dépôt.
 - **Note dans l'absolu, par rapport aux ancres.** La note d'un article ne doit pas dépendre de la qualité des autres candidats du jour : le même article doit obtenir la même note un jour riche et un jour creux.
 - **N'étire ni ne compresse artificiellement.** Il est normal qu'une journée faible ne produise aucune note au-dessus de 60, et qu'une journée riche en produise plusieurs au-dessus de 85. N'invente pas d'écart pour « remplir » l'échelle.
 - **Ne surestime pas.** Ces candidats proviennent d'une recherche automatique : beaucoup sont du niveau 30-60. Une note supérieure à 85 doit rester rare et justifiée par un impact concret et immédiat.

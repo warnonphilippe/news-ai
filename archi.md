@@ -148,7 +148,7 @@ score_final = relevance (0-100, notation comparative)
 
 | Composante | Origine | Détail |
 |---|---|---|
-| `relevance` | LLM, **un seul appel** (`rank_relevance`) | Tous les candidats sont notés ensemble, mais **par rapport à des ancres fixes** (exemples de référence invariants, de 12 à 96) et non les uns par rapport aux autres. Une `rationale` accompagne chaque note. |
+| `relevance` | LLM, **un seul appel** (`rank_relevance`) | Tous les candidats sont notés ensemble, mais **par rapport à des ancres fixes** (8 exemples de référence invariants, de 12 à 96) et non les uns par rapport aux autres. Une `rationale` accompagne chaque note. |
 | `facteur_fraîcheur` | calculé | 1.0 à ≤ 1 j → décroissance linéaire jusqu'à 0.6 en fin de fenêtre → plancher 0.25 au-delà. Sans date exploitable : `UNDATED_FRESHNESS_FACTOR` (0.75) |
 | `facteur_source` | `assets/source_weights.yaml` | match par **suffixe** de domaine (`blog.jetbrains.com` hérite de `jetbrains.com`). > 1 pour les sources primaires, < 1 pour les agrégateurs |
 | `facteur_communauté` | API Algolia Hacker News | `1 + 0.05 × log₁₀(1+points)`, plafonné à 1.20. **Neutre (1.0) en l'absence de signal** : ne pas être sur HN ne pénalise jamais |
@@ -181,6 +181,16 @@ L'étendue de ③ est plus resserrée que celle de ② : c'est **volontaire**. L
 artificiel de ② gonflait la discrimination au prix du sens — un article correct
 était rétrogradé à 35 uniquement pour « remplir » l'échelle. En ③, un lot
 homogène produit légitimement des notes proches.
+
+**Actualité vs ressource permanente.** Une règle explicite plafonne à 25 les
+contenus intemporels — documentation, README de dépôt, page produit, tutoriel de
+référence — même parfaitement dans le sujet : *ce digest présente ce qui a
+changé, pas ce qui existe*. Sans elle, ces pages captaient les premières places
+(elles sont très pertinentes thématiquement, n'ont pas de date, et certaines
+bénéficiaient même du bonus de source réservé aux éditeurs officiels : un test à
+10 articles en a fait remonter 8 sur 10). Effet de la règle, à vivier constant :
+étendue 57 → 71, écart-type 14.2 → 29.2, et les ressources permanentes tombent
+en bas de classement.
 
 **Fenêtre de fraîcheur** (`SEARCH_WINDOW_DAYS`, 7 j par défaut) : appliquée deux
 fois — à la source via `startPublishedDate` (Exa) et uniformément par le node

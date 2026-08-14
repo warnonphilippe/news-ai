@@ -137,7 +137,12 @@ score final = pertinence (0-100, tous les candidats notés ensemble)
 ```
 
 Les articles hors fenêtre sont écartés en amont, puis les doublons des 14
-derniers jours, et enfin les 5 meilleurs scores sont retenus.
+derniers jours, et enfin les 5 meilleurs scores sont retenus. Les **ressources
+permanentes** (documentation, README de dépôt, pages produit) sont volontairement
+reléguées : le digest présente ce qui a *changé*, pas ce qui existe.
+
+Pour afficher plus (ou moins) d'articles par jour, ajustez
+`MAX_ARTICLES_PER_DAY` dans `backend/.env`.
 
 La pertinence est notée en **un seul appel, par rapport à des exemples de
 référence fixes** (de « actualité business » ≈ 12 à « évolution majeure d'un

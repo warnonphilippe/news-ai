@@ -11,8 +11,10 @@ from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# On ne demande pas trop de resultats par requete pour limiter le bruit/latence.
-_RESULTS_PER_QUERY = 6
+# Resultats demandes par requete et par provider. Dimensionne pour alimenter le
+# vivier : apres dedup, filtre de fraicheur et retrait des doublons de
+# l'historique, il faut environ 2,5x le quota quotidien de candidats viables.
+_RESULTS_PER_QUERY = 8
 
 
 async def _search_all(
