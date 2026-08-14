@@ -49,8 +49,14 @@ export interface RunResponse {
   action: string;
 }
 
-export interface CustomSearchResponse {
+/** Entrée de la liste des recherches mémorisées (sans les articles). */
+export interface CustomSearchSummary {
+  id: number;
   query: string;
+  created_at: string;
   count: number;
+}
+
+export interface CustomSearchResponse extends CustomSearchSummary {
   articles: Article[];
 }

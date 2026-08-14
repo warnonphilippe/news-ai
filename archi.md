@@ -107,7 +107,7 @@ news/
             └── components/
                 ├── digest-list/            # les N cartes du digest + statut
                 ├── digest-card/            # une carte article
-                ├── history-sidebar/        # rubrique recherche perso + 14 derniers jours
+                ├── history-sidebar/        # recherches memorisees (supprimables) + conseils du jour
                 ├── export-button/          # bouton d'export .md (reutilise par digest-list et custom-search-results)
                 ├── custom-search-bar/      # champ texte + bouton unique, toujours visible
                 └── custom-search-results/  # affichage des resultats de recherche personnalisee
@@ -238,11 +238,17 @@ la table `runs` : `INSERT OR IGNORE` garantit qu'un seul process démarre le run
   `is_update_of` (FK vers l'article complété), `rank`, et les composantes du
   score : `relevance`, `age_days`, `freshness_factor`, `source_factor`,
   `final_score`.
+- **`custom_searches`** / **`custom_search_articles`** : recherches
+  personnalisées mémorisées, **volontairement hors de `runs`/`articles`**
+  (détail et justification en § 3.8).
 - Historique 14 j : `WHERE run_date >= date('now','-14 day')`.
 - Une **connexion courte par opération** (pas d'état partagé) → robuste avec les
   `BackgroundTasks` FastAPI.
 - **Migrations** : `models._migrate()` ajoute en `ALTER TABLE` les colonnes
   introduites après coup (idempotent), ce qui préserve l'historique des bases
+  existantes. Les nouvelles **tables** sont créées par les `CREATE TABLE IF NOT
+  EXISTS` du schéma : une base antérieure gagne `custom_searches` /
+  `custom_search_articles` au premier démarrage, sans toucher aux données
   existantes.
 
 ### 3.5 Recherche via MCP (`agents/mcp_tools.py`, `search_parse.py`)
@@ -282,6 +288,10 @@ parseur `search_parse.py` :
 | GET  | `/api/digest/{YYYY-MM-DD}` | digest d'une date (400 si format invalide) |
 | GET  | `/api/history` | index des 14 derniers jours (date, statut, compteur) |
 | POST | `/api/run?force=` | déclenche le run en **tâche de fond** (idempotent) |
+| POST | `/api/search` | lance une recherche personnalisée (synchrone) et la mémorise |
+| GET  | `/api/searches` | recherches mémorisées (plus récentes d'abord, avec compteur) |
+| GET  | `/api/searches/{id}` | relit une recherche mémorisée (404 si inconnue) |
+| DELETE | `/api/searches/{id}` | supprime une recherche et ses articles (404 si inconnue) |
 
 `POST /run` retourne immédiatement (`running`/`skipped`) ; le frontend **poll**
 ensuite `/digest/today` jusqu'à `done`.
@@ -289,8 +299,9 @@ ensuite `/digest/today` jusqu'à `done`.
 ### 3.8 Recherche personnalisée (`build_custom_graph`, `run_custom_search`)
 
 Un critère de recherche libre (phrase de l'utilisateur) déclenche une recherche
-**ponctuelle et jamais persistée**, où la correspondance à ce critère prime sur
-les repères habituels. Décision d'architecture : **un second graphe LangGraph
+où la correspondance à ce critère prime sur les repères habituels. Le résultat
+est **mémorisé** (voir « Persistance » ci-dessous), mais reste **étanche au
+digest quotidien**. Décision d'architecture : **un second graphe LangGraph
 compilé séparément** (`build_custom_graph` dans `graph.py`), plutôt que des
 branchements `if custom_query` dans les nodes du graphe quotidien.
 
@@ -337,12 +348,30 @@ IA-for-dev ».
 
 **Endpoint** : `POST /api/search`, body `{query: str}` (1-300 caractères).
 Exécution **synchrone** (pas de `BackgroundTasks`/polling — app locale
-mono-utilisateur, résultat éphémère donc rien à relire entre deux requêtes).
+mono-utilisateur ; la réponse porte directement la recherche mémorisée).
 Point d'implémentation critique : la route est déclarée `def` et non
 `async def` — `search()`/`summarize()` appellent `asyncio.run()` en interne, ce
 qui lève `RuntimeError` dans un handler déjà exécuté dans la boucle
 d'événements. En `def` classique, Starlette dispatch vers un threadpool (même
 mécanisme que `BackgroundTasks.add_task` pour `/run`).
+
+**Persistance (tables dédiées)** : `custom_searches` (id, query, created_at) et
+`custom_search_articles` (mêmes colonnes qu'`articles`, moins `run_date`/
+`is_update_of`, plus `search_id`). Ces tables sont **séparées de
+`runs`/`articles` à dessein** : `get_recent_history()` (anti-redite) et
+`get_digest()` interrogent `articles` par `run_date`, donc y ranger une
+recherche ad hoc la ferait remonter dans un digest ou écarter des articles des
+jours suivants. La séparation rend l'étanchéité **structurelle** plutôt que
+conditionnelle — il n'existe aucune requête à filtrer.
+
+L'écriture est faite par `run_custom_search` (`agents/service.py`), pas par un
+node : `build_custom_graph` n'a toujours pas de node `persist`, et le graphe
+reste ainsi sans effet de bord. Chaque appel crée une **entrée distincte**, même
+pour un critère identique — rien n'est écrasé ; la suppression est explicite
+(`DELETE /api/searches/{id}`, croix dans l'UI). À la relecture, `run_date` et
+`is_update_of` sont forcés à `null` : une recherche n'appartient à aucun run et
+ne peut pas « compléter un sujet précédent » (le graphe custom ne reçoit jamais
+d'historique).
 
 **Durcissement associé** : aucun appel LLM n'avait de timeout avant cette
 fonctionnalité (`search()` est bornée par `mcp_timeout`, mais pas
@@ -373,10 +402,14 @@ l'UI pour cette version (uniquement via `.env`).
   - `digest-card` — titre cliquable, source · date · cluster, badge « complète un
     sujet précédent » si `is_update_of`, résumé, « pourquoi c'est important »,
     tags, liens.
-  - `history-sidebar` — 14 derniers jours cliquables (recharge `digest/{date}`),
-    précédés d'une rubrique « Recherche personnalisée » présente dès qu'une
-    recherche a été lancée (`customQuery !== null`), qui réaffiche le résultat
-    mémorisé sans le relancer.
+  - `history-sidebar` — deux rubriques. « **Conseils du jour** » : les 14
+    derniers jours cliquables (recharge `digest/{date}`). « **Recherches
+    personnalisées** » (au-dessus, masquée si vide) : **toutes** les recherches
+    mémorisées, la plus récente en tête, chacune avec son compteur de résultats
+    et une croix de suppression ; une recherche encore en vol y figure avec `…`
+    et sans croix (rien à supprimer côté serveur). La croix appelle
+    `stopPropagation()` — sans quoi le clic sélectionnerait la recherche qu'on
+    vient de supprimer.
   - `custom-search-bar` — champ texte (300 car. max) + **bouton unique**,
     toujours visible. Émet la phrase saisie **rognée**, éventuellement vide ;
     c'est `app.component` qui route une chaîne vide vers la recherche du jour
@@ -392,12 +425,18 @@ l'UI pour cette version (uniquement via `.env`).
     côté client** (aucun endpoint backend dédié — les données affichées
     suffisent).
 - `app.component` bascule entre les deux vues via un état `mode: 'daily' |
-  'custom'`. Les deux états coexistent : basculer de rubrique ne fait que
-  changer `mode`, sans rien vider ni recharger — une recherche personnalisée
-  lancée puis quittée continue en arrière-plan et se retrouve intacte au
-  retour. Une seule recherche personnalisée est mémorisée : une nouvelle
-  annule la `Subscription` de la précédente (une réponse tardive ne peut donc
-  pas écraser un résultat plus récent) et remplace son résultat.
+  'custom'`, plus `activeSearchId` (id de la recherche affichée, `null` tant que
+  celle en cours n'a pas d'id serveur). Les deux états coexistent : quitter une
+  recherche ne fait que changer `mode`, sans rien vider ni recharger — une
+  recherche lancée puis quittée continue en arrière-plan et se retrouve intacte
+  au retour. Lancer une nouvelle recherche (ou en ouvrir une mémorisée) annule
+  la `Subscription` précédente, pour qu'une réponse tardive ne puisse pas
+  écraser l'affichage courant.
+- Les recherches sont **relues depuis le serveur** (`GET /api/searches`) au
+  démarrage et après chaque nouvelle recherche : la liste survit donc à un
+  rechargement de page comme à un redémarrage du backend. Supprimer la
+  recherche actuellement affichée repasse au digest ; supprimer une autre
+  n'affecte pas la vue.
 - Critère vide : `app.component` appelle `POST /api/run` plutôt que
   `/api/search` (dont le contrat exige `min_length=1`) et, si la réponse
   indique `action: 'skipped'` (run du jour déjà fait), réaffiche directement
@@ -443,7 +482,7 @@ Ports surchargeables via `BACKEND_PORT` / `FRONTEND_PORT`.
 | **Fenêtre appliquée 2 fois** (Exa + `filter_recent`) | uniquement à la source | Brave ne supporte pas `startPublishedDate` : sans le node, la moitié du vivier échapperait au filtre. |
 | **Repli si trop peu d'articles frais** | fenêtre stricte | Évite un digest vide un jour creux ; les articles de repli restent pénalisés au score. |
 | **Deux graphes séparés** (recherche personnalisée) | branchements `if custom_query` dans les nodes partagés | Non-régression structurelle : `build_graph`/`run_digest` restent à zéro diff, garantie par le diff git et non par relecture attentive de chaque node. |
-| **Recherche personnalisée synchrone** | `BackgroundTasks` + polling (comme `/run`) | Résultat éphémère (jamais persisté) : rien à relire entre deux requêtes, donc pas de bénéfice à l'asynchrone pour une app locale mono-utilisateur. |
+| **Recherche personnalisée synchrone** | `BackgroundTasks` + polling (comme `/run`) | App locale mono-utilisateur : la réponse porte directement la recherche mémorisée, un aller-retour suffit. Le polling de `/run` existe parce qu'un run du jour peut être déclenché par `run.py` hors navigateur, ce qui n'est jamais le cas d'une recherche. |
 | **Export Markdown 100 % client** | endpoint backend dédié | Les données affichées suffisent ; évite un aller-retour réseau et un endpoint supplémentaire à maintenir. |
 
 ---
@@ -526,6 +565,14 @@ Exa), `@modelcontextprotocol/server-brave-search`.
 - **Fenêtre/quota non réglables dans l'UI** : uniquement via `.env`
   (`CUSTOM_SEARCH_WINDOW_DAYS`, `CUSTOM_SEARCH_MAX_RESULTS`), par choix pour
   garder cette première version simple.
+- **Aucune limite au nombre de recherches mémorisées** ni purge automatique :
+  la liste grandit jusqu'à suppression manuelle (croix). Acceptable pour un
+  usage local ; une barre latérale très longue serait le premier symptôme.
+- **Suppression immédiate, sans confirmation ni annulation** : un clic sur la
+  croix supprime définitivement (la recherche coûte 1 à 2 minutes à refaire).
+- **Pas de déduplication des critères** : relancer deux fois la même phrase
+  crée deux entrées distinctes — voulu (les résultats peuvent différer d'un
+  jour à l'autre), mais sans regroupement dans l'UI.
 
 ### Techniques
 

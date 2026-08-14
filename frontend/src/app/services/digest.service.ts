@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   CustomSearchResponse,
+  CustomSearchSummary,
   DigestResponse,
   HistoryDay,
   RunResponse,
@@ -35,5 +36,17 @@ export class DigestService {
 
   searchCustom(query: string): Observable<CustomSearchResponse> {
     return this.http.post<CustomSearchResponse>(`${this.base}/search`, { query });
+  }
+
+  listSearches(): Observable<{ searches: CustomSearchSummary[] }> {
+    return this.http.get<{ searches: CustomSearchSummary[] }>(`${this.base}/searches`);
+  }
+
+  getSearch(id: number): Observable<CustomSearchResponse> {
+    return this.http.get<CustomSearchResponse>(`${this.base}/searches/${id}`);
+  }
+
+  deleteSearch(id: number): Observable<{ deleted: number }> {
+    return this.http.delete<{ deleted: number }>(`${this.base}/searches/${id}`);
   }
 }

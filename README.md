@@ -29,15 +29,18 @@ sélection courte à lire en **15 à 30 minutes**.
 - **Anti-redites sur 14 jours** : un article déjà présenté n'est pas remontré…
   - …**sauf** s'il **complète** de façon importante un sujet passé — il est alors
     affiché avec un badge « complète un sujet précédent ».
-- **Historique** : navigation dans les 14 derniers jours depuis une barre latérale.
+- **Conseils du jour** : navigation dans les 14 derniers jours depuis une barre
+  latérale.
 - **Un seul run par jour** : relancer l'application le même jour réaffiche
   instantanément la sélection sans relancer de recherche.
 - **UI web sobre** : cartes lisibles, liens vers les sources, thème clair/sombre
   automatique.
-- **Recherche personnalisée** : un champ texte permet de taper un critère libre
-  (domaine, sujet, question) pour une recherche ponctuelle sur les mêmes sources
+- **Recherches personnalisées** : un champ texte permet de taper un critère
+  libre (domaine, sujet, question) pour une recherche sur les mêmes sources
   (Exa + Brave), où la correspondance à ce critère prime sur tout le reste.
-  Jamais sauvegardée, sans effet sur le digest du jour ni sur l'historique.
+  Chaque recherche est **mémorisée** et reste consultable dans la barre
+  latérale (supprimable d'un clic sur ×), sans jamais entrer dans le digest du
+  jour ni influencer l'anti-redite.
 - **Export Markdown** : n'importe quelle liste affichée (digest du jour, digest
   d'une date passée, ou recherche personnalisée) s'exporte en un clic dans un
   fichier `.md` téléchargé.
@@ -117,9 +120,10 @@ BACKEND_PORT=8100 FRONTEND_PORT=4300 ./start.sh
   Une recherche prend en général **1 à 3 minutes**.
 - La **barre latérale** liste les 14 derniers jours ; cliquez une date pour
   revoir sa sélection. Dès qu'une recherche personnalisée a été lancée, une
-  rubrique **« Recherche personnalisée »** s'ajoute au-dessus de l'historique :
-  on navigue librement entre elle et les dates sans rien perdre — y compris
-  pendant que la recherche tourne encore.
+  rubrique **« Recherches personnalisées »** s'ajoute au-dessus des jours : on
+  navigue librement entre les recherches mémorisées et les dates sans rien
+  perdre — y compris pendant qu'une recherche tourne encore. La croix **×**
+  supprime une recherche.
 - Le bouton **« Exporter (.md) »**, présent sur chaque liste (digest ou
   recherche), télécharge son contenu au format Markdown.
 
@@ -143,11 +147,14 @@ Contrairement au digest du jour :
 - la fenêtre de fraîcheur est plus large (**30 jours** par défaut, contre 7) et
   la sélection plus large (**10 résultats** par défaut, contre 5) — un sujet ou
   une question mérite souvent plus de recul qu'une actualité du jour ;
-- le résultat **n'est jamais sauvegardé** en base : il n'apparaît pas dans
-  l'historique des jours et n'affecte pas l'anti-redite des jours suivants.
-  Il reste toutefois consultable pendant la session via sa rubrique dans la
-  barre latérale — **seule la dernière recherche est conservée**, une nouvelle
-  recherche remplace la précédente, et tout est perdu au rechargement de la page.
+- le résultat est **mémorisé** dans des tables dédiées : chaque recherche
+  s'ajoute à la rubrique « Recherches personnalisées » de la barre latérale
+  (la plus récente en haut) et se relit instantanément, sans nouvel appel aux
+  moteurs ni au LLM, même après un redémarrage de l'application. La croix **×**
+  sur une entrée la supprime définitivement ;
+- une recherche mémorisée **n'entre jamais dans le digest** : elle n'apparaît
+  pas dans « Conseils du jour » et n'affecte pas l'anti-redite des jours
+  suivants (garantie structurelle : tables séparées de `runs`/`articles`).
 
 Réglages dans `backend/.env` : `CUSTOM_SEARCH_WINDOW_DAYS`, `CUSTOM_SEARCH_MAX_RESULTS`.
 

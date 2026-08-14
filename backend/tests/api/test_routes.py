@@ -125,16 +125,34 @@ class TestPostRun:
         assert resp.json()["action"] == "started"
 
 
+def _stub_search(repo, query):
+    """Reponse minimale d'une recherche memorisee (forme du service reel)."""
+    return {
+        "id": 1,
+        "query": query,
+        "created_at": "2026-08-14T10:00:00",
+        "count": 0,
+        "articles": [],
+    }
+
+
 class TestPostSearch:
     def test_happy_path(self, client, monkeypatch):
         monkeypatch.setattr(
             routes_module,
             "run_custom_search",
-            lambda repo, query: [{"url": "https://a.com", "title": "A"}],
+            lambda repo, query: {
+                "id": 3,
+                "query": query,
+                "created_at": "2026-08-14T10:00:00",
+                "count": 1,
+                "articles": [{"url": "https://a.com", "title": "A"}],
+            },
         )
         resp = client.post("/api/search", json={"query": "RAG avec pgvector"})
         assert resp.status_code == 200
         body = resp.json()
+        assert body["id"] == 3
         assert body["query"] == "RAG avec pgvector"
         assert body["count"] == 1
         assert body["articles"][0]["title"] == "A"
@@ -159,7 +177,7 @@ class TestPostSearch:
         assert resp.status_code == 422
 
     def test_query_at_max_length_is_accepted(self, client, monkeypatch):
-        monkeypatch.setattr(routes_module, "run_custom_search", lambda repo, query: [])
+        monkeypatch.setattr(routes_module, "run_custom_search", _stub_search)
         resp = client.post("/api/search", json={"query": "x" * 300})
         assert resp.status_code == 200
 
@@ -172,7 +190,91 @@ class TestPostSearch:
         assert resp.status_code == 500
         assert "recherche indisponible" in resp.json()["detail"]
 
-    def test_query_is_stripped_in_response(self, client, monkeypatch):
-        monkeypatch.setattr(routes_module, "run_custom_search", lambda repo, query: [])
+    def test_query_is_stripped_before_reaching_the_service(self, client, monkeypatch):
+        seen = {}
+
+        def _capture(repo, query):
+            seen["query"] = query
+            return _stub_search(repo, query)
+
+        monkeypatch.setattr(routes_module, "run_custom_search", _capture)
         resp = client.post("/api/search", json={"query": "  spaced query  "})
+        assert seen["query"] == "spaced query"
         assert resp.json()["query"] == "spaced query"
+
+
+class TestSearchesCrud:
+    """Endpoints de gestion des recherches memorisees (liste / relecture /
+    suppression). On ecrit directement via le repo : ces routes ne declenchent
+    aucune recherche, elles ne font que lire/supprimer."""
+
+    def test_list_is_empty_initially(self, client):
+        resp = client.get("/api/searches")
+        assert resp.status_code == 200
+        assert resp.json() == {"searches": []}
+
+    def test_list_returns_stored_searches(self, client, repo, article_factory):
+        repo.save_custom_search("premiere", [article_factory()])
+        repo.save_custom_search("seconde", [])
+
+        resp = client.get("/api/searches")
+        searches = resp.json()["searches"]
+        assert {s["query"] for s in searches} == {"premiere", "seconde"}
+        by_query = {s["query"]: s for s in searches}
+        assert by_query["premiere"]["count"] == 1
+        assert by_query["seconde"]["count"] == 0
+
+    def test_get_returns_the_search_and_its_articles(self, client, repo, article_factory):
+        sid = repo.save_custom_search("ma requete", [article_factory(title="A")])
+
+        resp = client.get(f"/api/searches/{sid}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == sid
+        assert body["query"] == "ma requete"
+        assert body["count"] == 1
+        assert body["articles"][0]["title"] == "A"
+
+    def test_get_unknown_id_is_404(self, client):
+        assert client.get("/api/searches/999").status_code == 404
+
+    def test_get_non_integer_id_is_422(self, client):
+        assert client.get("/api/searches/abc").status_code == 422
+
+    def test_delete_removes_the_search(self, client, repo, article_factory):
+        sid = repo.save_custom_search("a supprimer", [article_factory()])
+
+        resp = client.delete(f"/api/searches/{sid}")
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": sid}
+        assert client.get(f"/api/searches/{sid}").status_code == 404
+        assert client.get("/api/searches").json()["searches"] == []
+
+    def test_delete_unknown_id_is_404(self, client):
+        assert client.delete("/api/searches/999").status_code == 404
+
+    def test_delete_is_not_idempotent_second_call_is_404(self, client, repo):
+        sid = repo.save_custom_search("q", [])
+        assert client.delete(f"/api/searches/{sid}").status_code == 200
+        assert client.delete(f"/api/searches/{sid}").status_code == 404
+
+    def test_deleting_one_search_leaves_the_others(self, client, repo, article_factory):
+        keep = repo.save_custom_search("a garder", [article_factory()])
+        drop = repo.save_custom_search("a jeter", [article_factory()])
+
+        client.delete(f"/api/searches/{drop}")
+
+        remaining = client.get("/api/searches").json()["searches"]
+        assert [s["id"] for s in remaining] == [keep]
+        assert client.get(f"/api/searches/{keep}").json()["count"] == 1
+
+    def test_stored_searches_never_appear_in_the_daily_digest(
+        self, client, repo, article_factory
+    ):
+        from src.db.repository import today_str
+
+        repo.save_custom_search("recherche perso", [article_factory(title="Perso")])
+
+        assert client.get("/api/digest/today").json()["articles"] == []
+        assert client.get("/api/history").json()["days"] == []
+        assert repo.get_recent_history(30, before_date=today_str()) == []

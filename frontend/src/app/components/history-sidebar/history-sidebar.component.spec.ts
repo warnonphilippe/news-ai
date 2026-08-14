@@ -1,6 +1,16 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HistorySidebarComponent } from './history-sidebar.component';
-import { HistoryDay } from '../../models/article.model';
+import { CustomSearchSummary, HistoryDay } from '../../models/article.model';
+
+function makeSummary(overrides: Partial<CustomSearchSummary> = {}): CustomSearchSummary {
+  return {
+    id: 1,
+    query: 'q',
+    created_at: '2026-08-14T10:00:00',
+    count: 0,
+    ...overrides,
+  };
+}
 
 describe('HistorySidebarComponent', () => {
   let fixture: ComponentFixture<HistorySidebarComponent>;
@@ -70,66 +80,130 @@ describe('HistorySidebarComponent', () => {
     expect(emitSpy).toHaveBeenCalledWith('2026-08-14');
   });
 
-  describe('custom search rubric', () => {
-    function customItem(root: HTMLElement): HTMLElement | null {
-      return root.querySelector('.sidebar__list--custom .sidebar__item');
+  describe('renommage', () => {
+    it('titles the day list "Conseils du jour"', () => {
+      fixture.detectChanges();
+      const titles: string[] = Array.from(
+        fixture.nativeElement.querySelectorAll('.sidebar__title'),
+      ).map((h) => (h as HTMLElement).textContent!.trim());
+      expect(titles).toContain('Conseils du jour');
+      expect(titles).not.toContain('Historique');
+    });
+  });
+
+  describe('rubrique des recherches personnalisees', () => {
+    function customItems(root: HTMLElement): HTMLElement[] {
+      return Array.from(root.querySelectorAll('.sidebar__list--custom .sidebar__item'));
     }
 
-    it('is hidden while no custom search has been run', () => {
-      component.customQuery = null;
+    it('is hidden while nothing has been searched', () => {
+      component.searches = [];
+      component.pendingQuery = null;
       fixture.detectChanges();
-      expect(customItem(fixture.nativeElement)).toBeNull();
-      expect(fixture.nativeElement.textContent).not.toContain('Recherche personnalisée');
+      expect(customItems(fixture.nativeElement)).toHaveLength(0);
+      expect(fixture.nativeElement.textContent).not.toContain('Recherches personnalisées');
     });
 
-    it('shows the memorised query and its result count', () => {
-      component.customQuery = 'RAG avec pgvector';
-      component.customCount = 7;
+    it('lists every stored search, not only the last one', () => {
+      component.searches = [
+        makeSummary({ id: 3, query: 'troisieme', count: 4 }),
+        makeSummary({ id: 2, query: 'deuxieme', count: 9 }),
+        makeSummary({ id: 1, query: 'premiere', count: 0 }),
+      ];
       fixture.detectChanges();
-      const item = customItem(fixture.nativeElement)!;
-      expect(item.querySelector('.sidebar__query')!.textContent).toContain('RAG avec pgvector');
-      expect(item.querySelector('.sidebar__count')!.textContent).toContain('7');
+
+      const items = customItems(fixture.nativeElement);
+      expect(items).toHaveLength(3);
+      expect(items.map((i) => i.querySelector('.sidebar__query')!.textContent!.trim())).toEqual([
+        'troisieme',
+        'deuxieme',
+        'premiere',
+      ]);
+      expect(items[1].querySelector('.sidebar__count')!.textContent).toContain('9');
     });
 
-    it('shows a placeholder count while the search is still running', () => {
-      component.customQuery = 'RAG';
-      component.customLoading = true;
+    it('shows the in-flight search above the stored ones with a placeholder count', () => {
+      component.searches = [makeSummary({ id: 1, query: 'stockee' })];
+      component.pendingQuery = 'en cours';
       fixture.detectChanges();
-      expect(customItem(fixture.nativeElement)!.querySelector('.sidebar__count')!.textContent)
-        .toContain('…');
+
+      const items = customItems(fixture.nativeElement);
+      expect(items).toHaveLength(2);
+      expect(items[0].querySelector('.sidebar__query')!.textContent).toContain('en cours');
+      expect(items[0].querySelector('.sidebar__count')!.textContent).toContain('…');
+      // Une recherche encore en vol n'est pas supprimable : rien a supprimer.
+      expect(items[0].querySelector('.sidebar__delete')).toBeNull();
     });
 
-    it('is shown as active when the custom rubric is the one displayed', () => {
-      component.customQuery = 'RAG';
+    it('marks the displayed search as active', () => {
+      component.searches = [makeSummary({ id: 1 }), makeSummary({ id: 2 })];
       component.customActive = true;
+      component.activeSearchId = 2;
       fixture.detectChanges();
-      expect(customItem(fixture.nativeElement)!.classList).toContain('sidebar__item--active');
+
+      const items = customItems(fixture.nativeElement);
+      expect(items[0].classList).not.toContain('sidebar__item--active');
+      expect(items[1].classList).toContain('sidebar__item--active');
     });
 
-    it('is not active when a date is displayed instead', () => {
-      component.customQuery = 'RAG';
+    it('marks the in-flight search as active while it has no id yet', () => {
+      component.pendingQuery = 'en cours';
+      component.customActive = true;
+      component.activeSearchId = null;
+      fixture.detectChanges();
+      expect(customItems(fixture.nativeElement)[0].classList).toContain(
+        'sidebar__item--active',
+      );
+    });
+
+    it('marks nothing as active while a digest is displayed', () => {
+      component.searches = [makeSummary({ id: 1 })];
+      component.pendingQuery = 'en cours';
       component.customActive = false;
+      component.activeSearchId = 1;
       fixture.detectChanges();
-      expect(customItem(fixture.nativeElement)!.classList).not.toContain('sidebar__item--active');
+
+      for (const item of customItems(fixture.nativeElement)) {
+        expect(item.classList).not.toContain('sidebar__item--active');
+      }
     });
 
-    it('emits pickCustom when clicked', () => {
-      component.customQuery = 'RAG';
+    it('emits pickCustom with the clicked search id', () => {
+      component.searches = [makeSummary({ id: 42 })];
       fixture.detectChanges();
       const emitSpy = jest.spyOn(component.pickCustom, 'emit');
 
-      customItem(fixture.nativeElement)!.click();
+      customItems(fixture.nativeElement)[0].click();
 
-      expect(emitSpy).toHaveBeenCalled();
+      expect(emitSpy).toHaveBeenCalledWith(42);
     });
 
-    it('renders an empty-string query as a real rubric (recherche du jour exclue)', () => {
-      // customQuery n'est jamais '' en pratique (la barre route les criteres
-      // vides vers la recherche du jour) : on verifie juste que le garde est
-      // bien `!== null` et non une simple verite booleenne.
-      component.customQuery = '';
+    it('emits deleteCustom when the cross is clicked', () => {
+      component.searches = [makeSummary({ id: 42 })];
       fixture.detectChanges();
-      expect(customItem(fixture.nativeElement)).not.toBeNull();
+      const emitSpy = jest.spyOn(component.deleteCustom, 'emit');
+
+      const cross: HTMLButtonElement = fixture.nativeElement.querySelector('.sidebar__delete');
+      cross.click();
+
+      expect(emitSpy).toHaveBeenCalledWith(42);
+    });
+
+    it('clicking the cross does not also select the search', () => {
+      component.searches = [makeSummary({ id: 42 })];
+      fixture.detectChanges();
+      const pickSpy = jest.spyOn(component.pickCustom, 'emit');
+
+      const cross: HTMLButtonElement = fixture.nativeElement.querySelector('.sidebar__delete');
+      cross.click();
+
+      expect(pickSpy).not.toHaveBeenCalled();
+    });
+
+    it('exposes one cross per stored search', () => {
+      component.searches = [makeSummary({ id: 1 }), makeSummary({ id: 2 })];
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelectorAll('.sidebar__delete')).toHaveLength(2);
     });
   });
 });

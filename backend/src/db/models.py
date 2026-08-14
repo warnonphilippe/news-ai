@@ -45,6 +45,45 @@ CREATE TABLE IF NOT EXISTS articles (
 
 CREATE INDEX IF NOT EXISTS idx_articles_norm ON articles(normalized_url);
 CREATE INDEX IF NOT EXISTS idx_articles_run  ON articles(run_date);
+
+-- Recherches personnalisees : tables SEPAREES de runs/articles a dessein.
+-- L'anti-redite (get_recent_history) et le digest (get_digest) interrogent
+-- `articles` par run_date : une recherche ad hoc rangee la polluerait. La
+-- separation rend l'etancheite structurelle plutot que conditionnelle.
+CREATE TABLE IF NOT EXISTS custom_searches (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    query      TEXT NOT NULL,
+    created_at TEXT NOT NULL             -- ISO 8601 local, secondes
+);
+
+CREATE TABLE IF NOT EXISTS custom_search_articles (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    search_id      INTEGER NOT NULL,
+    url            TEXT NOT NULL,
+    normalized_url TEXT NOT NULL,
+    title          TEXT NOT NULL,
+    summary        TEXT NOT NULL,
+    why_it_matters TEXT,
+    source         TEXT,
+    published_date TEXT,
+    tags_json      TEXT,
+    topic_cluster  TEXT,
+    links_json     TEXT,
+    rank           INTEGER,
+    relevance           INTEGER,
+    relevance_rationale TEXT,
+    age_days            INTEGER,
+    freshness_factor    REAL,
+    source_factor       REAL,
+    community_factor    REAL,
+    hn_points           INTEGER,
+    hn_comments         INTEGER,
+    final_score         REAL,
+    FOREIGN KEY (search_id) REFERENCES custom_searches(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_articles_search
+    ON custom_search_articles(search_id);
 """
 
 

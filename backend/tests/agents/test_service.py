@@ -95,9 +95,11 @@ class TestRunCustomSearch:
 
         result = service.run_custom_search(repo, "ma recherche")
 
-        assert [a["rank"] for a in result] == [1, 2]
-        assert all(a["is_update_of"] is None for a in result)
-        assert all(a["links"] == [] for a in result)
+        assert result["query"] == "ma recherche"
+        assert result["count"] == 2
+        assert [a["rank"] for a in result["articles"]] == [1, 2]
+        assert all(a["is_update_of"] is None for a in result["articles"])
+        assert all(a["links"] == [] for a in result["articles"])
 
     def test_existing_is_update_of_and_links_preserved(self, repo, monkeypatch):
         fake_graph = _FakeCompiledGraph(
@@ -106,8 +108,12 @@ class TestRunCustomSearch:
         monkeypatch.setattr(service, "build_custom_graph", lambda repo: fake_graph)
 
         result = service.run_custom_search(repo, "q")
-        assert result[0]["is_update_of"] == 7
-        assert result[0]["links"] == [{"title": "x", "url": "y"}]
+        first = result["articles"][0]
+        # is_update_of est toujours neutralise a la relecture : une recherche
+        # personnalisee ne complete jamais un sujet passe (pas d'historique
+        # fourni au graphe custom).
+        assert first["is_update_of"] is None
+        assert first["links"] == [{"title": "x", "url": "y"}]
 
     def test_never_persists_or_locks_a_run(self, repo, monkeypatch):
         fake_graph = _FakeCompiledGraph({"selected": [{"url": "https://a.com"}]})
@@ -115,11 +121,14 @@ class TestRunCustomSearch:
 
         service.run_custom_search(repo, "q")
 
-        # Aucun run ni article ne doit exister en base pour aujourd'hui.
+        # Aucun run ni article de DIGEST ne doit exister pour aujourd'hui :
+        # la recherche est memorisee dans ses propres tables.
         from src.db.repository import today_str
 
         assert repo.get_run(today_str()) is None
         assert repo.get_digest(today_str()) == []
+        assert repo.get_recent_history(30) == []
+        assert len(repo.list_custom_searches()) == 1
 
     def test_initial_state_uses_custom_search_settings(self, repo, monkeypatch):
         from src.config.settings import settings
@@ -144,12 +153,37 @@ class TestRunCustomSearch:
     def test_empty_selected_returns_empty_list(self, repo, monkeypatch):
         fake_graph = _FakeCompiledGraph({"selected": []})
         monkeypatch.setattr(service, "build_custom_graph", lambda repo: fake_graph)
-        assert service.run_custom_search(repo, "q") == []
+        result = service.run_custom_search(repo, "q")
+        assert result["articles"] == []
+        assert result["count"] == 0
 
     def test_missing_selected_key_returns_empty_list(self, repo, monkeypatch):
         fake_graph = _FakeCompiledGraph({})
         monkeypatch.setattr(service, "build_custom_graph", lambda repo: fake_graph)
-        assert service.run_custom_search(repo, "q") == []
+        assert service.run_custom_search(repo, "q")["articles"] == []
+
+    def test_each_call_creates_a_distinct_stored_search(self, repo, monkeypatch):
+        fake_graph = _FakeCompiledGraph({"selected": [{"url": "https://a.com"}]})
+        monkeypatch.setattr(service, "build_custom_graph", lambda repo: fake_graph)
+
+        first = service.run_custom_search(repo, "meme phrase")
+        second = service.run_custom_search(repo, "meme phrase")
+
+        # Meme critere : deux entrees distinctes, la precedente est conservee.
+        assert first["id"] != second["id"]
+        assert len(repo.list_custom_searches()) == 2
+
+    def test_stored_search_is_readable_afterwards(self, repo, monkeypatch):
+        fake_graph = _FakeCompiledGraph(
+            {"selected": [{"url": "https://a.com", "title": "T"}]}
+        )
+        monkeypatch.setattr(service, "build_custom_graph", lambda repo: fake_graph)
+
+        created = service.run_custom_search(repo, "q")
+        reread = repo.get_custom_search(created["id"])
+
+        assert reread["query"] == "q"
+        assert [a["title"] for a in reread["articles"]] == ["T"]
 
 
 class _FakeCompiledGraph:

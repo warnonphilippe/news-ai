@@ -47,13 +47,15 @@ def run_daily_digest(repo: Repository, force: bool = False) -> dict:
         }
 
 
-def run_custom_search(repo: Repository, query: str) -> List[Dict[str, Any]]:
-    """Execute une recherche personnalisee ponctuelle et retourne les articles.
+def run_custom_search(repo: Repository, query: str) -> Dict[str, Any]:
+    """Execute une recherche personnalisee, la memorise et la retourne.
 
     Contrairement a run_daily_digest : pas de verrou (`try_start_run`/
-    `finish_run` — pas de notion de run pour une recherche ad hoc), et le
-    resultat n'est PAS persiste (build_custom_graph n'a pas de node persist).
-    Chaque appel est independant, meme phrase ou non.
+    `finish_run` — pas de notion de run pour une recherche ad hoc). Le
+    resultat est persiste dans des tables dediees (jamais `runs`/`articles`),
+    donc sans effet sur le digest du jour ni sur l'anti-redite : le graphe
+    custom n'a toujours pas de node persist, l'ecriture est faite ici.
+    Chaque appel cree une entree distincte, meme phrase ou non.
     """
     query = (query or "").strip()
     if not query:
@@ -75,5 +77,12 @@ def run_custom_search(repo: Repository, query: str) -> List[Dict[str, Any]]:
         art.setdefault("is_update_of", None)
         art.setdefault("links", [])
 
-    logger.info("Recherche personnalisee terminee : %d resultats", len(selected))
-    return selected
+    search_id = repo.save_custom_search(query, selected)
+    saved = repo.get_custom_search(search_id)
+
+    logger.info(
+        "Recherche personnalisee terminee : %d resultats (id=%d)",
+        len(selected),
+        search_id,
+    )
+    return saved

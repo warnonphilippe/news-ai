@@ -296,3 +296,150 @@ class TestGetHistoryIndex:
         repo.try_start_run("2026-08-12")
         index = repo.get_history_index(14)
         assert [r["run_date"] for r in index] == ["2026-08-12", "2026-08-10"]
+
+
+class TestCustomSearches:
+    """Recherches personnalisees : tables dediees, etanches vis-a-vis du digest."""
+
+    def test_save_returns_a_new_id(self, repo, article_factory):
+        sid = repo.save_custom_search("q", [article_factory()])
+        assert isinstance(sid, int)
+        assert sid > 0
+
+    def test_ids_are_distinct_for_identical_queries(self, repo):
+        first = repo.save_custom_search("meme phrase", [])
+        second = repo.save_custom_search("meme phrase", [])
+        assert first != second
+
+    def test_saving_does_not_replace_previous_searches(self, repo):
+        repo.save_custom_search("premiere", [])
+        repo.save_custom_search("seconde", [])
+        assert len(repo.list_custom_searches()) == 2
+
+    def test_list_is_empty_initially(self, repo):
+        assert repo.list_custom_searches() == []
+
+    def test_list_counts_articles_per_search(self, repo, article_factory):
+        with_two = repo.save_custom_search(
+            "deux", [article_factory(url="https://a.com"), article_factory(url="https://b.com")]
+        )
+        empty = repo.save_custom_search("zero", [])
+
+        by_id = {s["id"]: s for s in repo.list_custom_searches()}
+        assert by_id[with_two]["count"] == 2
+        assert by_id[empty]["count"] == 0
+
+    def test_list_exposes_query_and_created_at(self, repo):
+        repo.save_custom_search("ma requete", [])
+        entry = repo.list_custom_searches()[0]
+        assert entry["query"] == "ma requete"
+        assert entry["created_at"]  # horodatage renseigne
+
+    def test_get_returns_articles_ordered_by_rank(self, repo, article_factory):
+        sid = repo.save_custom_search(
+            "q",
+            [
+                article_factory(url="https://1.com", title="Premier"),
+                article_factory(url="https://2.com", title="Deuxieme"),
+                article_factory(url="https://3.com", title="Troisieme"),
+            ],
+        )
+        found = repo.get_custom_search(sid)
+        assert [a["rank"] for a in found["articles"]] == [1, 2, 3]
+        assert [a["title"] for a in found["articles"]] == [
+            "Premier",
+            "Deuxieme",
+            "Troisieme",
+        ]
+
+    def test_get_deserialises_tags_and_links(self, repo, article_factory):
+        sid = repo.save_custom_search(
+            "q",
+            [article_factory(tags=["A", "B"], links=[{"title": "T", "url": "u"}])],
+        )
+        art = repo.get_custom_search(sid)["articles"][0]
+        assert art["tags"] == ["A", "B"]
+        assert art["links"] == [{"title": "T", "url": "u"}]
+
+    def test_get_normalises_run_date_and_is_update_of_to_none(self, repo, article_factory):
+        # Une recherche n'appartient a aucun run et ne complete jamais un sujet
+        # passe : la forme retournee doit l'affirmer explicitement.
+        sid = repo.save_custom_search("q", [article_factory(is_update_of=42)])
+        art = repo.get_custom_search(sid)["articles"][0]
+        assert art["run_date"] is None
+        assert art["is_update_of"] is None
+        assert "search_id" not in art
+
+    def test_get_preserves_scoring_components(self, repo, article_factory):
+        sid = repo.save_custom_search(
+            "q",
+            [article_factory(relevance=91, freshness_factor=0.5, final_score=45.5)],
+        )
+        art = repo.get_custom_search(sid)["articles"][0]
+        assert art["relevance"] == 91
+        assert art["freshness_factor"] == 0.5
+        assert art["final_score"] == 45.5
+
+    def test_get_unknown_id_returns_none(self, repo):
+        assert repo.get_custom_search(12345) is None
+
+    def test_get_search_without_articles(self, repo):
+        sid = repo.save_custom_search("aucun resultat", [])
+        found = repo.get_custom_search(sid)
+        assert found["count"] == 0
+        assert found["articles"] == []
+
+    def test_delete_returns_true_and_removes_it(self, repo, article_factory):
+        sid = repo.save_custom_search("q", [article_factory()])
+        assert repo.delete_custom_search(sid) is True
+        assert repo.get_custom_search(sid) is None
+        assert repo.list_custom_searches() == []
+
+    def test_delete_unknown_id_returns_false(self, repo):
+        assert repo.delete_custom_search(999) is False
+
+    def test_delete_also_removes_the_articles(self, repo, article_factory):
+        sid = repo.save_custom_search("q", [article_factory()])
+        repo.delete_custom_search(sid)
+
+        from src.db.models import get_connection
+
+        conn = get_connection(repo.db_path)
+        try:
+            left = conn.execute(
+                "SELECT COUNT(*) AS n FROM custom_search_articles WHERE search_id = ?",
+                (sid,),
+            ).fetchone()["n"]
+        finally:
+            conn.close()
+        assert left == 0
+
+    def test_delete_leaves_other_searches_intact(self, repo, article_factory):
+        keep = repo.save_custom_search("a garder", [article_factory()])
+        drop = repo.save_custom_search("a jeter", [article_factory()])
+
+        repo.delete_custom_search(drop)
+
+        assert [s["id"] for s in repo.list_custom_searches()] == [keep]
+        assert repo.get_custom_search(keep)["count"] == 1
+
+    def test_never_pollutes_the_digest_or_anti_redite(self, repo, article_factory):
+        # Garantie structurelle : tables separees de runs/articles.
+        repo.save_custom_search("q", [article_factory(url="https://perso.com")])
+
+        assert repo.get_digest(today_str()) == []
+        assert repo.get_history_index(14) == []
+        assert repo.get_recent_history(30) == []
+        assert repo.known_normalized_urls(30) == set()
+
+    def test_survives_a_new_repository_instance(self, repo, article_factory, db_path):
+        # La persistance est le point de la fonctionnalite : une nouvelle
+        # instance (= redemarrage du backend) doit relire les memes donnees.
+        sid = repo.save_custom_search("persistante", [article_factory(title="A")])
+
+        from src.db.repository import Repository
+
+        reopened = Repository(db_path)
+        found = reopened.get_custom_search(sid)
+        assert found["query"] == "persistante"
+        assert [a["title"] for a in found["articles"]] == ["A"]

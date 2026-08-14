@@ -170,6 +170,122 @@ class Repository:
         finally:
             conn.close()
 
+    # ----------------------------------------------- recherches personnalisees
+
+    def save_custom_search(self, query: str, articles: List[Dict[str, Any]]) -> int:
+        """Persiste une recherche personnalisee et ses resultats.
+
+        Ecrit dans des tables dediees (jamais `articles`) : une recherche ad hoc
+        ne doit ni apparaitre dans un digest ni alimenter l'anti-redite.
+        Retourne l'id de la recherche creee.
+        """
+        conn = get_connection(self.db_path)
+        try:
+            cur = conn.execute(
+                "INSERT INTO custom_searches (query, created_at) VALUES (?, ?)",
+                (query, datetime.now().isoformat(timespec="seconds")),
+            )
+            search_id = int(cur.lastrowid)
+            for rank, art in enumerate(articles, start=1):
+                conn.execute(
+                    "INSERT INTO custom_search_articles (search_id, url, "
+                    "normalized_url, title, summary, why_it_matters, source, "
+                    "published_date, tags_json, topic_cluster, links_json, rank, "
+                    "relevance, relevance_rationale, age_days, freshness_factor, "
+                    "source_factor, community_factor, hn_points, hn_comments, "
+                    "final_score) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        search_id,
+                        art.get("url", ""),
+                        art.get("normalized_url", ""),
+                        art.get("title", ""),
+                        art.get("summary", ""),
+                        art.get("why_it_matters", ""),
+                        art.get("source", ""),
+                        art.get("published_date", ""),
+                        json.dumps(art.get("tags", []), ensure_ascii=False),
+                        art.get("topic_cluster", ""),
+                        json.dumps(art.get("links", []), ensure_ascii=False),
+                        rank,
+                        art.get("relevance"),
+                        art.get("relevance_rationale"),
+                        art.get("age_days"),
+                        art.get("freshness_factor"),
+                        art.get("source_factor"),
+                        art.get("community_factor"),
+                        art.get("hn_points"),
+                        art.get("hn_comments"),
+                        art.get("final_score"),
+                    ),
+                )
+            conn.commit()
+            return search_id
+        finally:
+            conn.close()
+
+    def list_custom_searches(self) -> List[Dict[str, Any]]:
+        """Recherches memorisees, de la plus recente a la plus ancienne."""
+        conn = get_connection(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT s.id, s.query, s.created_at, "
+                "COUNT(a.id) AS count "
+                "FROM custom_searches s "
+                "LEFT JOIN custom_search_articles a ON a.search_id = s.id "
+                "GROUP BY s.id ORDER BY s.created_at DESC, s.id DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def get_custom_search(self, search_id: int) -> Optional[Dict[str, Any]]:
+        """Une recherche memorisee et ses articles, ou None si inconnue."""
+        conn = get_connection(self.db_path)
+        try:
+            head = conn.execute(
+                "SELECT id, query, created_at FROM custom_searches WHERE id = ?",
+                (search_id,),
+            ).fetchone()
+            if head is None:
+                return None
+            rows = conn.execute(
+                "SELECT * FROM custom_search_articles WHERE search_id = ? "
+                "ORDER BY rank ASC",
+                (search_id,),
+            ).fetchall()
+            articles = []
+            for r in rows:
+                art = self._row_to_article(r)
+                art.pop("search_id", None)
+                # Uniformise la forme avec un article de digest : une recherche
+                # personnalisee n'appartient a aucun run et ne complete jamais
+                # un sujet passe (pas d'historique fourni au graphe custom).
+                art["run_date"] = None
+                art["is_update_of"] = None
+                articles.append(art)
+            result = dict(head)
+            result["count"] = len(articles)
+            result["articles"] = articles
+            return result
+        finally:
+            conn.close()
+
+    def delete_custom_search(self, search_id: int) -> bool:
+        """Supprime une recherche et ses articles. False si elle n'existait pas."""
+        conn = get_connection(self.db_path)
+        try:
+            # Suppression explicite des enfants : ON DELETE CASCADE depend du
+            # PRAGMA foreign_keys, on ne s'y fie pas pour une operation
+            # destructrice.
+            conn.execute(
+                "DELETE FROM custom_search_articles WHERE search_id = ?", (search_id,)
+            )
+            cur = conn.execute("DELETE FROM custom_searches WHERE id = ?", (search_id,))
+            conn.commit()
+            return cur.rowcount == 1
+        finally:
+            conn.close()
+
     @staticmethod
     def _row_to_article(row) -> Dict[str, Any]:
         d = dict(row)

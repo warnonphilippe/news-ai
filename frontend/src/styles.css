@@ -8,6 +8,7 @@
   --accent: #6ea8fe;
   --accent-2: #7ee787;
   --badge: #f0a35e;
+  --danger: #e5534b;
 }
 
 @media (prefers-color-scheme: light) {
@@ -21,6 +22,7 @@
     --accent: #1a66ff;
     --accent-2: #1a7f37;
     --badge: #b4571b;
+    --danger: #c93c31;
   }
 }
 
@@ -99,6 +101,34 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   margin-right: 8px;
+}
+.sidebar__item--pending {
+  cursor: default;
+  color: var(--muted);
+}
+.sidebar__delete {
+  flex: none;
+  margin-left: 6px;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.sidebar__item:hover .sidebar__delete,
+.sidebar__delete:focus-visible {
+  opacity: 1;
+}
+.sidebar__delete:hover {
+  background: var(--panel);
+  color: var(--danger);
 }
 
 /* --- Main --- */

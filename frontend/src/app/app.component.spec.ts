@@ -4,10 +4,37 @@ import * as rxjs from 'rxjs';
 
 import { AppComponent } from './app.component';
 import { DigestService } from './services/digest.service';
-import { Article, CustomSearchResponse, DigestResponse, HistoryDay } from './models/article.model';
+import {
+  Article,
+  CustomSearchResponse,
+  CustomSearchSummary,
+  DigestResponse,
+  HistoryDay,
+} from './models/article.model';
 
 function makeDigestResponse(overrides: Partial<DigestResponse> = {}): DigestResponse {
   return { run_date: '2026-08-14', status: 'done', articles: [], ...overrides };
+}
+
+function makeSearchResponse(overrides: Partial<CustomSearchResponse> = {}): CustomSearchResponse {
+  return {
+    id: 1,
+    query: 'q',
+    created_at: '2026-08-14T10:00:00',
+    count: 0,
+    articles: [],
+    ...overrides,
+  };
+}
+
+function makeSummary(overrides: Partial<CustomSearchSummary> = {}): CustomSearchSummary {
+  return {
+    id: 1,
+    query: 'q',
+    created_at: '2026-08-14T10:00:00',
+    count: 0,
+    ...overrides,
+  };
 }
 
 /** Lit l'abonnement de polling prive du composant (verifie juste sa presence :
@@ -26,6 +53,9 @@ describe('AppComponent', () => {
     getHistory: jest.Mock;
     run: jest.Mock;
     searchCustom: jest.Mock;
+    listSearches: jest.Mock;
+    getSearch: jest.Mock;
+    deleteSearch: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -36,7 +66,10 @@ describe('AppComponent', () => {
       run: jest
         .fn()
         .mockReturnValue(of({ run_date: '2026-08-14', status: 'running', action: 'started' })),
-      searchCustom: jest.fn().mockReturnValue(of({ query: '', count: 0, articles: [] })),
+      searchCustom: jest.fn().mockReturnValue(of(makeSearchResponse())),
+      listSearches: jest.fn().mockReturnValue(of({ searches: [] as CustomSearchSummary[] })),
+      getSearch: jest.fn().mockReturnValue(of(makeSearchResponse())),
+      deleteSearch: jest.fn().mockReturnValue(of({ deleted: 1 })),
     };
 
     await TestBed.configureTestingModule({
@@ -133,7 +166,7 @@ describe('AppComponent', () => {
 
       component.selectDate('2026-08-10');
       const late = { title: 'Arrive apres la bascule' } as Article;
-      subject.next({ query: 'recherche en cours', count: 1, articles: [late] });
+      subject.next(makeSearchResponse({ query: 'recherche en cours', count: 1, articles: [late] }));
 
       // Naviguer d'une rubrique a l'autre ne doit rien perdre.
       expect(component.customResults).toEqual([late]);
@@ -319,7 +352,7 @@ describe('AppComponent', () => {
     it('populates results and clears loading on success', () => {
       fixture.detectChanges();
       const articles = [{ title: 'A' } as Article];
-      svc.searchCustom.mockReturnValue(of({ query: 'q', count: 1, articles }));
+      svc.searchCustom.mockReturnValue(of(makeSearchResponse({ count: 1, articles })));
 
       component.runCustomSearch('q');
 
@@ -359,8 +392,8 @@ describe('AppComponent', () => {
       component.runCustomSearch('premiere');
       component.runCustomSearch('seconde');
 
-      second.next({ query: 'seconde', count: 1, articles: [{ title: 'B' } as Article] });
-      first.next({ query: 'premiere', count: 1, articles: [{ title: 'A (perimee)' } as Article] });
+      second.next(makeSearchResponse({ id: 2, query: 'seconde', count: 1, articles: [{ title: 'B' } as Article] }));
+      first.next(makeSearchResponse({ id: 1, query: 'premiere', count: 1, articles: [{ title: 'A (perimee)' } as Article] }));
 
       expect(component.customResults).toEqual([{ title: 'B' }]);
     });
@@ -381,36 +414,153 @@ describe('AppComponent', () => {
       expect(component.customResults).toBe(results);
     });
 
-    it('showCustom re-displays the memorised search without re-running it', () => {
+    it('showCustom re-reads a stored search without re-running it', () => {
       fixture.detectChanges();
       const results = [{ title: 'X' } as Article];
-      svc.searchCustom.mockReturnValue(of({ query: 'q', count: 1, articles: results }));
-      component.runCustomSearch('q');
-      component.selectDate('2026-08-10');
-      svc.searchCustom.mockClear();
+      svc.getSearch.mockReturnValue(
+        of(makeSearchResponse({ id: 7, query: 'stockee', count: 1, articles: results })),
+      );
 
-      component.showCustom();
+      component.showCustom(7);
 
       expect(component.mode).toBe('custom');
-      expect(component.customQuery).toBe('q');
+      expect(component.activeSearchId).toBe(7);
+      expect(component.customQuery).toBe('stockee');
       expect(component.customResults).toEqual(results);
+      expect(svc.getSearch).toHaveBeenCalledWith(7);
+      // Aucune nouvelle recherche : pas d'appel aux moteurs ni au LLM.
       expect(svc.searchCustom).not.toHaveBeenCalled();
     });
 
-    it('only ever keeps the latest custom search', () => {
+    it('showCustom shows the known query while the articles are loading', () => {
       fixture.detectChanges();
-      svc.searchCustom.mockReturnValue(
-        of({ query: 'ancienne', count: 1, articles: [{ title: 'Ancienne' } as Article] }),
-      );
-      component.runCustomSearch('ancienne');
+      component.searches = [makeSummary({ id: 4, query: 'deja connue' })];
+      svc.getSearch.mockReturnValue(new Subject<CustomSearchResponse>().asObservable());
 
-      svc.searchCustom.mockReturnValue(
-        of({ query: 'nouvelle', count: 1, articles: [{ title: 'Nouvelle' } as Article] }),
+      component.showCustom(4);
+
+      expect(component.customQuery).toBe('deja connue');
+      expect(component.customLoading).toBe(true);
+    });
+
+    it('showCustom reports an error when the stored search is gone', () => {
+      fixture.detectChanges();
+      svc.getSearch.mockReturnValue(throwError(() => new Error('404')));
+
+      component.showCustom(9);
+
+      expect(component.customError).toBe('Cette recherche n’est plus disponible.');
+      expect(component.customLoading).toBe(false);
+    });
+
+    it('showCustom cancels an in-flight search so its late response cannot leak in', () => {
+      fixture.detectChanges();
+      const pending = new Subject<CustomSearchResponse>();
+      svc.searchCustom.mockReturnValue(pending.asObservable());
+      component.runCustomSearch('en cours');
+
+      svc.getSearch.mockReturnValue(
+        of(makeSearchResponse({ id: 5, query: 'stockee', count: 1, articles: [{ title: 'Stockee' } as Article] })),
       );
+      component.showCustom(5);
+      pending.next(makeSearchResponse({ id: 6, articles: [{ title: 'Trop tard' } as Article] }));
+
+      expect(component.customResults).toEqual([{ title: 'Stockee' }]);
+      expect(component.activeSearchId).toBe(5);
+    });
+  });
+
+  describe('persistance des recherches', () => {
+    it('loads the stored searches on init', () => {
+      const searches = [makeSummary({ id: 2, query: 'anterieure', count: 3 })];
+      svc.listSearches.mockReturnValue(of({ searches }));
+      fixture.detectChanges();
+      expect(component.searches).toEqual(searches);
+    });
+
+    it('keeps every search: a new one does not replace the previous ones', () => {
+      fixture.detectChanges();
+      svc.searchCustom.mockReturnValue(of(makeSearchResponse({ id: 2, query: 'nouvelle' })));
+      svc.listSearches.mockReturnValue(
+        of({
+          searches: [
+            makeSummary({ id: 2, query: 'nouvelle' }),
+            makeSummary({ id: 1, query: 'ancienne' }),
+          ],
+        }),
+      );
+
       component.runCustomSearch('nouvelle');
 
-      expect(component.customQuery).toBe('nouvelle');
-      expect(component.customResults).toEqual([{ title: 'Nouvelle' }]);
+      expect(component.searches.map((s) => s.query)).toEqual(['nouvelle', 'ancienne']);
+      expect(component.activeSearchId).toBe(2);
+    });
+
+    it('does not refresh the list when the search failed', () => {
+      fixture.detectChanges();
+      svc.listSearches.mockClear();
+      svc.searchCustom.mockReturnValue(throwError(() => new Error('KO')));
+
+      component.runCustomSearch('q');
+
+      expect(svc.listSearches).not.toHaveBeenCalled();
+      expect(component.activeSearchId).toBeNull();
+    });
+
+    it('marks the in-flight search as active until the server assigns an id', () => {
+      fixture.detectChanges();
+      svc.searchCustom.mockReturnValue(new Subject<CustomSearchResponse>().asObservable());
+
+      component.runCustomSearch('en cours');
+
+      expect(component.activeSearchId).toBeNull();
+      expect(component.customLoading).toBe(true);
+    });
+  });
+
+  describe('deleteSearch', () => {
+    it('removes the search from the list', () => {
+      fixture.detectChanges();
+      component.searches = [makeSummary({ id: 1 }), makeSummary({ id: 2 })];
+
+      component.deleteSearch(1);
+
+      expect(svc.deleteSearch).toHaveBeenCalledWith(1);
+      expect(component.searches.map((s) => s.id)).toEqual([2]);
+    });
+
+    it('returns to the digest when the displayed search is deleted', () => {
+      fixture.detectChanges();
+      svc.getSearch.mockReturnValue(of(makeSearchResponse({ id: 3 })));
+      component.showCustom(3);
+      expect(component.mode).toBe('custom');
+
+      component.deleteSearch(3);
+
+      expect(component.mode).toBe('daily');
+    });
+
+    it('stays on the displayed search when another one is deleted', () => {
+      fixture.detectChanges();
+      svc.getSearch.mockReturnValue(of(makeSearchResponse({ id: 3 })));
+      component.showCustom(3);
+      component.searches = [makeSummary({ id: 3 }), makeSummary({ id: 8 })];
+
+      component.deleteSearch(8);
+
+      expect(component.mode).toBe('custom');
+      expect(component.activeSearchId).toBe(3);
+      expect(component.searches.map((s) => s.id)).toEqual([3]);
+    });
+
+    it('keeps the list unchanged when the deletion fails', () => {
+      fixture.detectChanges();
+      component.searches = [makeSummary({ id: 1 })];
+      svc.deleteSearch.mockReturnValue(throwError(() => new Error('KO')));
+
+      component.deleteSearch(1);
+
+      expect(component.searches.map((s) => s.id)).toEqual([1]);
     });
   });
 

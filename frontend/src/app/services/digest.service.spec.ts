@@ -6,7 +6,12 @@ import {
 import { provideHttpClient } from '@angular/common/http';
 
 import { DigestService } from './digest.service';
-import { CustomSearchResponse, DigestResponse, RunResponse } from '../models/article.model';
+import {
+  CustomSearchResponse,
+  CustomSearchSummary,
+  DigestResponse,
+  RunResponse,
+} from '../models/article.model';
 
 describe('DigestService', () => {
   let service: DigestService;
@@ -105,6 +110,65 @@ describe('DigestService', () => {
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ query: 'RAG avec pgvector' });
       req.flush(mockResponse);
+    });
+  });
+
+  describe('listSearches', () => {
+    it('issues a GET to /api/searches', () => {
+      const searches: CustomSearchSummary[] = [
+        { id: 2, query: 'seconde', created_at: '2026-08-14T11:00:00', count: 4 },
+        { id: 1, query: 'premiere', created_at: '2026-08-14T10:00:00', count: 7 },
+      ];
+
+      service.listSearches().subscribe((res) => expect(res.searches).toEqual(searches));
+
+      const req = httpMock.expectOne('/api/searches');
+      expect(req.request.method).toBe('GET');
+      req.flush({ searches });
+    });
+
+    it('passes an empty list through', () => {
+      service.listSearches().subscribe((res) => expect(res.searches).toEqual([]));
+      httpMock.expectOne('/api/searches').flush({ searches: [] });
+    });
+  });
+
+  describe('getSearch', () => {
+    it('issues a GET to /api/searches/{id}', () => {
+      const stored: CustomSearchResponse = {
+        id: 5,
+        query: 'MCP en production',
+        created_at: '2026-08-14T10:00:00',
+        count: 0,
+        articles: [],
+      };
+
+      service.getSearch(5).subscribe((res) => expect(res).toEqual(stored));
+
+      const req = httpMock.expectOne('/api/searches/5');
+      expect(req.request.method).toBe('GET');
+      req.flush(stored);
+    });
+  });
+
+  describe('deleteSearch', () => {
+    it('issues a DELETE to /api/searches/{id}', () => {
+      service.deleteSearch(5).subscribe((res) => expect(res).toEqual({ deleted: 5 }));
+
+      const req = httpMock.expectOne('/api/searches/5');
+      expect(req.request.method).toBe('DELETE');
+      req.flush({ deleted: 5 });
+    });
+
+    it('surfaces a 404 as an error', () => {
+      const seen: { status?: number } = {};
+      service.deleteSearch(9).subscribe({ error: (e) => (seen.status = e.status) });
+
+      httpMock
+        .expectOne('/api/searches/9')
+        .flush({ detail: 'Recherche introuvable' }, { status: 404, statusText: 'Not Found' });
+
+      expect(seen.status).toBe(404);
     });
   });
 });

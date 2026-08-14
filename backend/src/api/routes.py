@@ -92,8 +92,30 @@ def search_custom(payload: CustomSearchRequest):
     if not query:
         raise HTTPException(status_code=400, detail="Le critere de recherche est vide")
     try:
-        articles = run_custom_search(repo, query)
+        return run_custom_search(repo, query)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Recherche personnalisee KO")
         raise HTTPException(status_code=500, detail=f"La recherche a echoue : {exc}")
-    return {"query": query, "count": len(articles), "articles": articles}
+
+
+@router.get("/searches")
+def list_searches():
+    """Recherches personnalisees memorisees (les plus recentes d'abord)."""
+    return {"searches": repo.list_custom_searches()}
+
+
+@router.get("/searches/{search_id}")
+def get_search(search_id: int):
+    """Relit une recherche memorisee (aucun nouvel appel aux moteurs/LLM)."""
+    found = repo.get_custom_search(search_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Recherche introuvable")
+    return found
+
+
+@router.delete("/searches/{search_id}")
+def delete_search(search_id: int):
+    """Supprime definitivement une recherche memorisee et ses articles."""
+    if not repo.delete_custom_search(search_id):
+        raise HTTPException(status_code=404, detail="Recherche introuvable")
+    return {"deleted": search_id}

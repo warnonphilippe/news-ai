@@ -4,7 +4,7 @@ import { Subscription, interval } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
 
 import { DigestService } from './services/digest.service';
-import { Article, HistoryDay } from './models/article.model';
+import { Article, CustomSearchSummary, HistoryDay } from './models/article.model';
 import { DigestListComponent } from './components/digest-list/digest-list.component';
 import { HistorySidebarComponent } from './components/history-sidebar/history-sidebar.component';
 import { CustomSearchBarComponent } from './components/custom-search-bar/custom-search-bar.component';
@@ -25,12 +25,13 @@ import { CustomSearchResultsComponent } from './components/custom-search-results
       <app-history-sidebar
         [days]="history"
         [selected]="mode === 'custom' ? null : selectedDate"
-        [customQuery]="customQuery"
-        [customCount]="customResults.length"
-        [customLoading]="customLoading"
+        [searches]="searches"
+        [pendingQuery]="customLoading ? customQuery : null"
         [customActive]="mode === 'custom'"
+        [activeSearchId]="activeSearchId"
         (pick)="selectDate($event)"
-        (pickCustom)="showCustom()"
+        (pickCustom)="showCustom($event)"
+        (deleteCustom)="deleteSearch($event)"
       ></app-history-sidebar>
 
       <main class="main">
@@ -70,6 +71,10 @@ export class AppComponent implements OnInit, OnDestroy {
   customResults: Article[] = [];
   customLoading = false;
   customError: string | null = null;
+  /** Recherches memorisees cote serveur (persistantes). */
+  searches: CustomSearchSummary[] = [];
+  /** Recherche affichee ; null tant que celle en cours n'est pas memorisee. */
+  activeSearchId: number | null = null;
 
   private poll?: Subscription;
   private customSub?: Subscription;
@@ -97,6 +102,7 @@ export class AppComponent implements OnInit, OnDestroy {
       }
     });
     this.refreshHistory();
+    this.refreshSearches();
   }
 
   ngOnDestroy(): void {
@@ -119,8 +125,41 @@ export class AppComponent implements OnInit, OnDestroy {
     this.loadDate(date);
   }
 
-  showCustom(): void {
+  /** Relit une recherche memorisee (aucun nouvel appel aux moteurs/LLM). */
+  showCustom(id: number): void {
+    this.customSub?.unsubscribe();
     this.mode = 'custom';
+    this.activeSearchId = id;
+    this.customError = null;
+    this.customResults = [];
+    this.customQuery = this.searches.find((s) => s.id === id)?.query ?? null;
+    this.customLoading = true;
+    this.customSub = this.svc.getSearch(id).subscribe({
+      next: (res) => {
+        this.customQuery = res.query;
+        this.customResults = res.articles;
+        this.customLoading = false;
+      },
+      error: () => {
+        this.customError = 'Cette recherche n’est plus disponible.';
+        this.customLoading = false;
+      },
+    });
+  }
+
+  deleteSearch(id: number): void {
+    this.svc.deleteSearch(id).subscribe({
+      next: () => {
+        this.searches = this.searches.filter((s) => s.id !== id);
+        // La recherche affichee vient de disparaitre : retour au digest.
+        if (this.mode === 'custom' && this.activeSearchId === id) {
+          this.exitCustomMode();
+        }
+      },
+      // Echec de suppression : on laisse la liste en place plutot que de
+      // faire disparaitre une entree qui existe toujours cote serveur.
+      error: () => {},
+    });
   }
 
   triggerRun(): void {
@@ -143,6 +182,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.customSub?.unsubscribe();
     this.mode = 'custom';
     this.customQuery = query;
+    this.activeSearchId = null;
     this.customLoading = true;
     this.customError = null;
     this.customResults = [];
@@ -150,6 +190,10 @@ export class AppComponent implements OnInit, OnDestroy {
       next: (res) => {
         this.customResults = res.articles;
         this.customLoading = false;
+        this.activeSearchId = res.id;
+        // La recherche vient d'etre memorisee cote serveur : elle rejoint la
+        // liste, sans effacer les precedentes.
+        this.refreshSearches();
       },
       error: (err) => {
         this.customError =
@@ -159,10 +203,14 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Repasse sur le digest sans perdre la recherche personnalisee : elle reste
-   * accessible depuis sa rubrique dans l'historique. */
+  /** Repasse sur le digest ; les recherches restent accessibles depuis la
+   * barre laterale (elles sont memorisees cote serveur). */
   exitCustomMode(): void {
     this.mode = 'daily';
+  }
+
+  private refreshSearches(): void {
+    this.svc.listSearches().subscribe((res) => (this.searches = res.searches));
   }
 
   private loadDate(date: string): void {
