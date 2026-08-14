@@ -148,7 +148,7 @@ score_final = relevance (0-100, notation comparative)
 
 | Composante | Origine | Détail |
 |---|---|---|
-| `relevance` | LLM, **un seul appel** (`rank_relevance`) | Tous les candidats sont notés ensemble, avec une grille explicite (90-100 majeur → 0-29 hors sujet) et l'obligation d'utiliser toute l'échelle. Une `rationale` accompagne chaque note. |
+| `relevance` | LLM, **un seul appel** (`rank_relevance`) | Tous les candidats sont notés ensemble, mais **par rapport à des ancres fixes** (exemples de référence invariants, de 12 à 96) et non les uns par rapport aux autres. Une `rationale` accompagne chaque note. |
 | `facteur_fraîcheur` | calculé | 1.0 à ≤ 1 j → décroissance linéaire jusqu'à 0.6 en fin de fenêtre → plancher 0.25 au-delà. Sans date exploitable : `UNDATED_FRESHNESS_FACTOR` (0.75) |
 | `facteur_source` | `assets/source_weights.yaml` | match par **suffixe** de domaine (`blog.jetbrains.com` hérite de `jetbrains.com`). > 1 pour les sources primaires, < 1 pour les agrégateurs |
 | `facteur_communauté` | API Algolia Hacker News | `1 + 0.05 × log₁₀(1+points)`, plafonné à 1.20. **Neutre (1.0) en l'absence de signal** : ne pas être sur HN ne pénalise jamais |
@@ -156,17 +156,31 @@ score_final = relevance (0-100, notation comparative)
 > Le score peut dépasser 100 : les facteurs correctifs sont multiplicatifs et
 > peuvent excéder 1. Seul l'ordre relatif importe.
 
-**Pourquoi une notation comparative ?** Noter chaque article dans un appel isolé
-produisait des scores non comparables : privé de point de référence, le modèle
-tassait ses notes. Mesures avant/après sur des runs réels :
+**Comment la notation a évolué** — deux problèmes successifs, mesurés à chaque
+étape sur des runs réels :
 
-| | étendue | écart-type |
-|---|---|---|
-| Appels isolés | 82–95 (13 pts) | 4.3 |
-| **Appel comparatif** | **35–94 (59 pts)** | **19.9** |
+| Approche | étendue | écart-type | dérive inter-groupes¹ |
+|---|---|---|---|
+| ① Un appel LLM par article | 82–95 (13) | 4.3 | — |
+| ② Un appel comparatif, écart imposé | 35–94 (59) | 19.9 | 4.0 (max 7) |
+| ③ **Un appel + ancres fixes** *(retenu)* | **52–84 (32)** | **10.2** | **2.8 (max 6)** |
 
-Auparavant la pertinence discriminait *moins* que les facteurs correctifs ; elle
-redevient le critère dominant.
+¹ *Écart moyen de la note d'un même article selon le groupe de candidats face
+auquel il est jugé (protocole : 5 articles notés seuls, puis mêlés à 5 autres).*
+
+- **① → ②** : noté isolément, le modèle n'a aucun point de référence et tasse ses
+  notes ; la pertinence discriminait alors *moins* que les facteurs correctifs.
+- **② → ③** : mais imposer un écart minimal rendait la note dépendante du lot du
+  jour — un même article valait 87 seul et 55 face à un lot plus fort, si bien
+  qu'un score d'aujourd'hui n'était pas comparable à celui d'hier. Les **ancres
+  fixes** (`relevance_prompt.md`) donnent des repères invariants : le modèle
+  situe chaque candidat par rapport à des exemples types, pas par rapport à ses
+  voisins.
+
+L'étendue de ③ est plus resserrée que celle de ② : c'est **volontaire**. L'écart
+artificiel de ② gonflait la discrimination au prix du sens — un article correct
+était rétrogradé à 35 uniquement pour « remplir » l'échelle. En ③, un lot
+homogène produit légitimement des notes proches.
 
 **Fenêtre de fraîcheur** (`SEARCH_WINDOW_DAYS`, 7 j par défaut) : appliquée deux
 fois — à la source via `startPublishedDate` (Exa) et uniformément par le node
@@ -365,6 +379,13 @@ Exa), `@modelcontextprotocol/server-brave-search`.
 - **Couplage HN / anglophone** : le signal communautaire favorise mécaniquement
   les sujets populaires sur Hacker News, au détriment des écosystèmes Java
   d'entreprise, peu représentés. Le plafond à 1.20 limite l'effet.
+- **Comparabilité inter-jours imparfaite** : les ancres réduisent la dérive sans
+  l'annuler (2.8 points en moyenne, jusqu'à 6). Comparer deux scores à quelques
+  points près d'un jour à l'autre n'a donc pas de sens ; les écarts marqués,
+  eux, sont significatifs.
+- **Ancres non validées empiriquement** : les exemples de référence sont un
+  jugement éditorial, comme `source_weights.yaml`. Ils sont à ajuster si le
+  niveau des notes ne correspond pas à votre perception.
 
 ### Pistes non implémentées
 

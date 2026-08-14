@@ -139,13 +139,19 @@ score final = pertinence (0-100, tous les candidats notés ensemble)
 Les articles hors fenêtre sont écartés en amont, puis les doublons des 14
 derniers jours, et enfin les 5 meilleurs scores sont retenus.
 
-La pertinence est notée en **comparant les candidats entre eux en un seul appel**
-(avec une grille explicite), et chaque article affiche la raison de sa sélection
-(« Retenu car… ») ainsi que le détail de son score au survol.
+La pertinence est notée en **un seul appel, par rapport à des exemples de
+référence fixes** (de « actualité business » ≈ 12 à « évolution majeure d'un
+outil du quotidien » ≈ 96). Ces ancres rendent les notes comparables d'un jour à
+l'autre. Chaque article affiche la raison de sa sélection (« Retenu car… ») et
+le détail de son score au survol.
 
-> Limite à connaître : la pertinence reste un jugement du LLM sur un extrait.
-> Le seul signal externe est Hacker News, qui ne couvre qu'une partie des
-> articles. Voir [archi.md § 9](archi.md) pour le détail.
+Vous pouvez ajuster ces repères dans
+`backend/src/assets/relevance_prompt.md` si le niveau des notes ne correspond
+pas à votre perception.
+
+> Limite à connaître : la pertinence reste un jugement du LLM sur un résumé, pas
+> sur l'article complet. Le seul signal externe est Hacker News, qui ne couvre
+> qu'une partie des articles. Voir [archi.md § 9](archi.md) pour le détail.
 
 ---
 

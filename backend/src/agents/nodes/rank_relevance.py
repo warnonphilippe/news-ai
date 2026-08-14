@@ -1,12 +1,19 @@
 """Node rank_relevance : note la pertinence de TOUS les candidats en un seul appel.
 
-Noter chaque article dans un appel isole produit des scores non comparables : le
-LLM, privé de point de reference, tasse ses notes en haut de l'echelle (mesure
-sur les premiers runs : 82-95, ecart-type 4.3), au point que la pertinence
-discriminait moins que les facteurs correctifs.
+Deux problemes successifs ont faconne ce node :
 
-Ici, le modele voit la liste complete et note en comparant, avec une grille
-explicite et l'obligation d'utiliser toute l'echelle (cf. relevance_prompt.md).
+1. Noter chaque article dans un appel isole produisait des scores non
+   comparables : prive de point de reference, le LLM tassait ses notes
+   (mesure : 82-95, ecart-type 4.3). D'ou l'appel unique sur tout le lot.
+
+2. Mais noter « les uns par rapport aux autres » rend la note dependante du
+   groupe du jour : un meme article valait 87 seul et 55 face a un lot plus
+   fort — un score d'aujourd'hui n'etait donc pas comparable a celui d'hier.
+
+Le prompt (relevance_prompt.md) resout le second point par des **ancres fixes** :
+le modele situe chaque candidat par rapport a des exemples de reference
+invariants, et non par rapport a ses voisins du jour. L'appel reste unique
+(coherence du lot, un seul aller-retour), mais la notation vise l'absolu.
 """
 
 import logging
