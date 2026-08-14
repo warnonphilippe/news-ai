@@ -8,6 +8,21 @@ import { HistoryDay } from '../../models/article.model';
   imports: [CommonModule],
   template: `
     <aside class="sidebar">
+      <ng-container *ngIf="customQuery !== null">
+        <h2 class="sidebar__title">Recherche personnalisée</h2>
+        <ul class="sidebar__list sidebar__list--custom">
+          <li
+            class="sidebar__item"
+            [class.sidebar__item--active]="customActive"
+            [title]="customQuery"
+            (click)="pickCustom.emit()"
+          >
+            <span class="sidebar__query">{{ customQuery }}</span>
+            <span class="sidebar__count">{{ customLoading ? '…' : customCount }}</span>
+          </li>
+        </ul>
+      </ng-container>
+
       <h2 class="sidebar__title">Historique</h2>
       <p class="sidebar__hint" *ngIf="!days?.length">Aucun jour enregistré.</p>
       <ul class="sidebar__list">
@@ -26,6 +41,13 @@ import { HistoryDay } from '../../models/article.model';
 })
 export class HistorySidebarComponent {
   @Input() days: HistoryDay[] = [];
+  /** Date affichee, ou null si la rubrique active est la recherche personnalisee. */
   @Input() selected: string | null = null;
+  /** Derniere (et unique) recherche personnalisee memorisee ; null si aucune. */
+  @Input() customQuery: string | null = null;
+  @Input() customCount = 0;
+  @Input() customLoading = false;
+  @Input() customActive = false;
   @Output() pick = new EventEmitter<string>();
+  @Output() pickCustom = new EventEmitter<void>();
 }

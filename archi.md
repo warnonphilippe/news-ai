@@ -105,11 +105,11 @@ news/
             ├── services/digest.service.ts    # appels HttpClient vers /api
             ├── utils/markdown-export.ts      # fonctions pures : slugify, buildDigestMarkdown, downloadMarkdown
             └── components/
-                ├── digest-list/            # les N cartes du digest + bouton run + statut
+                ├── digest-list/            # les N cartes du digest + statut
                 ├── digest-card/            # une carte article
-                ├── history-sidebar/        # 14 derniers jours
+                ├── history-sidebar/        # rubrique recherche perso + 14 derniers jours
                 ├── export-button/          # bouton d'export .md (reutilise par digest-list et custom-search-results)
-                ├── custom-search-bar/      # champ texte + bouton, toujours visible
+                ├── custom-search-bar/      # champ texte + bouton unique, toujours visible
                 └── custom-search-results/  # affichage des resultats de recherche personnalisee
 ```
 
@@ -367,14 +367,21 @@ l'UI pour cette version (uniquement via `.env`).
 - Répartition :
   - `app.component` — état applicatif : chargement du jour, sélection de date,
     déclenchement du run, **polling** toutes les 4 s pendant un run, historique.
-  - `digest-list` — en-tête (date, statut), bouton « Rechercher aujourd'hui »
-    (désactivé hors du jour courant ou pendant un run), liste de cartes.
+  - `digest-list` — en-tête (date, statut), export, liste de cartes. **Aucun
+    bouton de recherche** : une barre unique pilote les deux recherches (voir
+    ci-dessous).
   - `digest-card` — titre cliquable, source · date · cluster, badge « complète un
     sujet précédent » si `is_update_of`, résumé, « pourquoi c'est important »,
     tags, liens.
-  - `history-sidebar` — 14 derniers jours cliquables (recharge `digest/{date}`).
-  - `custom-search-bar` — champ texte (300 car. max) + bouton, toujours visible,
-    émet la phrase saisie ; ne connaît rien du mode d'affichage.
+  - `history-sidebar` — 14 derniers jours cliquables (recharge `digest/{date}`),
+    précédés d'une rubrique « Recherche personnalisée » présente dès qu'une
+    recherche a été lancée (`customQuery !== null`), qui réaffiche le résultat
+    mémorisé sans le relancer.
+  - `custom-search-bar` — champ texte (300 car. max) + **bouton unique**,
+    toujours visible. Émet la phrase saisie **rognée**, éventuellement vide ;
+    c'est `app.component` qui route une chaîne vide vers la recherche du jour
+    et le reste vers la recherche personnalisée. Le composant ne connaît ni le
+    mode d'affichage ni les deux endpoints.
   - `custom-search-results` — composant **dédié**, pas de réutilisation des
     `@Input()` de `digest-list` (pour ne courir aucun risque de régression
     visuelle sur le digest quotidien). En-tête « Recherche : « … » », état de
@@ -385,9 +392,17 @@ l'UI pour cette version (uniquement via `.env`).
     côté client** (aucun endpoint backend dédié — les données affichées
     suffisent).
 - `app.component` bascule entre les deux vues via un état `mode: 'daily' |
-  'custom'` ; sélectionner une date dans l'historique repasse en mode `daily`.
-  Une `Subscription` annulable évite qu'une réponse tardive d'une recherche
-  personnalisée n'écrase un résultat plus récent.
+  'custom'`. Les deux états coexistent : basculer de rubrique ne fait que
+  changer `mode`, sans rien vider ni recharger — une recherche personnalisée
+  lancée puis quittée continue en arrière-plan et se retrouve intacte au
+  retour. Une seule recherche personnalisée est mémorisée : une nouvelle
+  annule la `Subscription` de la précédente (une réponse tardive ne peut donc
+  pas écraser un résultat plus récent) et remplace son résultat.
+- Critère vide : `app.component` appelle `POST /api/run` plutôt que
+  `/api/search` (dont le contrat exige `min_length=1`) et, si la réponse
+  indique `action: 'skipped'` (run du jour déjà fait), réaffiche directement
+  la sélection existante au lieu de démarrer un polling qui n'aurait rien à
+  attendre.
 - Thème clair/sombre automatique (`prefers-color-scheme`), CSS unique sans
   dépendance externe.
 

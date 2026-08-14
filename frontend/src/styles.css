@@ -91,6 +91,15 @@ body {
 .sidebar__item--active .sidebar__count {
   color: var(--accent);
 }
+.sidebar__list--custom {
+  margin-bottom: 22px;
+}
+.sidebar__query {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 8px;
+}
 
 /* --- Main --- */
 .main {

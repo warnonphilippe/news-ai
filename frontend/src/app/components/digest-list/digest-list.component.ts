@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Article } from '../../models/article.model';
 import { DigestCardComponent } from '../digest-card/digest-card.component';
@@ -28,13 +28,6 @@ import { ExportButtonComponent } from '../export-button/export-button.component'
             [articles]="articles"
             [contextLabel]="'Sélection du ' + runDate"
           ></app-export-button>
-          <button
-            class="btn"
-            [disabled]="status === 'running' || !isToday"
-            (click)="run.emit()"
-          >
-            {{ status === 'running' ? '…' : 'Rechercher aujourd’hui' }}
-          </button>
         </div>
       </header>
 
@@ -63,6 +56,4 @@ export class DigestListComponent {
   @Input() articles: Article[] = [];
   @Input() runDate = '';
   @Input() status = 'none';
-  @Input() isToday = true;
-  @Output() run = new EventEmitter<void>();
 }

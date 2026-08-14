@@ -27,7 +27,7 @@ import { ExportButtonComponent } from '../export-button/export-button.component'
             [contextLabel]="'Recherche ' + query"
           ></app-export-button>
           <button class="btn btn--ghost" type="button" (click)="clear.emit()">
-            Revenir à la sélection du jour
+            Revenir au digest
           </button>
         </div>
       </header>

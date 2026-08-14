@@ -24,14 +24,19 @@ import { CustomSearchResultsComponent } from './components/custom-search-results
     <div class="layout">
       <app-history-sidebar
         [days]="history"
-        [selected]="selectedDate"
+        [selected]="mode === 'custom' ? null : selectedDate"
+        [customQuery]="customQuery"
+        [customCount]="customResults.length"
+        [customLoading]="customLoading"
+        [customActive]="mode === 'custom'"
         (pick)="selectDate($event)"
+        (pickCustom)="showCustom()"
       ></app-history-sidebar>
 
       <main class="main">
         <app-custom-search-bar
-          [pending]="customLoading"
-          (search)="runCustomSearch($event)"
+          [pending]="searchPending"
+          (search)="onSearch($event)"
         ></app-custom-search-bar>
 
         <app-digest-list
@@ -39,8 +44,6 @@ import { CustomSearchResultsComponent } from './components/custom-search-results
           [articles]="articles"
           [runDate]="selectedDate || today"
           [status]="status"
-          [isToday]="isToday"
-          (run)="triggerRun()"
         ></app-digest-list>
 
         <app-custom-search-results
@@ -77,6 +80,12 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.selectedDate === null || this.selectedDate === this.today;
   }
 
+  /** Une seule barre de recherche pilote les deux recherches : elle reste
+   * inactive tant que l'une ou l'autre est en cours. */
+  get searchPending(): boolean {
+    return this.customLoading || (this.status === 'running' && this.isToday);
+  }
+
   ngOnInit(): void {
     this.svc.getToday().subscribe((res) => {
       this.today = res.run_date;
@@ -95,24 +104,37 @@ export class AppComponent implements OnInit, OnDestroy {
     this.customSub?.unsubscribe();
   }
 
+  /** Critere vide : on relance/reaffiche la selection du jour. */
+  onSearch(query: string): void {
+    if (query) {
+      this.runCustomSearch(query);
+    } else {
+      this.triggerRun();
+    }
+  }
+
   selectDate(date: string): void {
     this.mode = 'daily';
-    this.customSub?.unsubscribe();
     this.selectedDate = date;
-    this.svc.getByDate(date).subscribe((res) => {
-      this.status = res.status;
-      this.articles = res.articles;
-      if (res.status === 'running' && this.isToday) {
-        this.startPolling();
-      } else {
-        this.poll?.unsubscribe();
-      }
-    });
+    this.loadDate(date);
+  }
+
+  showCustom(): void {
+    this.mode = 'custom';
   }
 
   triggerRun(): void {
+    this.mode = 'daily';
+    this.selectedDate = this.today;
     this.status = 'running';
-    this.svc.run().subscribe(() => this.startPolling());
+    this.svc.run().subscribe((res) => {
+      if (res.action === 'skipped') {
+        // Deja fait aujourd'hui : rien n'a ete relance, on reaffiche.
+        this.loadDate(this.today);
+      } else {
+        this.startPolling();
+      }
+    });
   }
 
   runCustomSearch(query: string): void {
@@ -137,12 +159,22 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Repasse sur le digest sans perdre la recherche personnalisee : elle reste
+   * accessible depuis sa rubrique dans l'historique. */
   exitCustomMode(): void {
-    this.customSub?.unsubscribe();
     this.mode = 'daily';
-    this.customQuery = null;
-    this.customResults = [];
-    this.customError = null;
+  }
+
+  private loadDate(date: string): void {
+    this.svc.getByDate(date).subscribe((res) => {
+      this.status = res.status;
+      this.articles = res.articles;
+      if (res.status === 'running' && this.isToday) {
+        this.startPolling();
+      } else {
+        this.poll?.unsubscribe();
+      }
+    });
   }
 
   private startPolling(): void {

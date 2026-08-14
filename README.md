@@ -108,10 +108,18 @@ BACKEND_PORT=8100 FRONTEND_PORT=4300 ./start.sh
 - L'écran principal affiche la **sélection du jour**. Chaque carte : titre
   cliquable (source), résumé, « pourquoi c'est important », tags, et éventuels
   liens complémentaires.
-- Le bouton **« Rechercher aujourd'hui »** relance la recherche du jour (utile si
-  le run automatique a échoué) ; une recherche prend en général **1 à 3 minutes**.
-- La **barre latérale « Historique »** liste les 14 derniers jours ; cliquez une
-  date pour revoir sa sélection.
+- **Une seule barre de recherche** pilote les deux recherches :
+  - **champ vide** → bouton **« Rechercher aujourd'hui »** : (re)lance la
+    recherche du jour, utile si le run automatique a échoué. Si elle a déjà eu
+    lieu, la sélection existante est simplement réaffichée ;
+  - **critère saisi** → bouton **« Rechercher »** : lance une recherche
+    personnalisée (voir section suivante).
+  Une recherche prend en général **1 à 3 minutes**.
+- La **barre latérale** liste les 14 derniers jours ; cliquez une date pour
+  revoir sa sélection. Dès qu'une recherche personnalisée a été lancée, une
+  rubrique **« Recherche personnalisée »** s'ajoute au-dessus de l'historique :
+  on navigue librement entre elle et les dates sans rien perdre — y compris
+  pendant que la recherche tourne encore.
 - Le bouton **« Exporter (.md) »**, présent sur chaque liste (digest ou
   recherche), télécharge son contenu au format Markdown.
 
@@ -123,7 +131,7 @@ Un champ de texte, toujours visible en haut de l'écran, permet de lancer une
 recherche ponctuelle sur un critère libre (domaine, sujet, ou question) :
 
 ```
-Rechercher un sujet, une question… (ex : « RAG avec pgvector en production »)
+Rechercher un sujet, une question… (vide = sélection du jour)
 ```
 
 Contrairement au digest du jour :
@@ -135,9 +143,11 @@ Contrairement au digest du jour :
 - la fenêtre de fraîcheur est plus large (**30 jours** par défaut, contre 7) et
   la sélection plus large (**10 résultats** par défaut, contre 5) — un sujet ou
   une question mérite souvent plus de recul qu'une actualité du jour ;
-- le résultat **n'est jamais sauvegardé** : il n'apparaît pas dans l'historique,
-  n'affecte pas l'anti-redite des jours suivants, et disparaît si vous
-  relancez une autre recherche ou revenez au digest du jour.
+- le résultat **n'est jamais sauvegardé** en base : il n'apparaît pas dans
+  l'historique des jours et n'affecte pas l'anti-redite des jours suivants.
+  Il reste toutefois consultable pendant la session via sa rubrique dans la
+  barre latérale — **seule la dernière recherche est conservée**, une nouvelle
+  recherche remplace la précédente, et tout est perdu au rechargement de la page.
 
 Réglages dans `backend/.env` : `CUSTOM_SEARCH_WINDOW_DAYS`, `CUSTOM_SEARCH_MAX_RESULTS`.
 
