@@ -496,6 +496,74 @@ describe('AppComponent', () => {
       expect(component.activeSearchId).toBe(2);
     });
 
+    it('adds the finished search to the sidebar from the response itself', () => {
+      fixture.detectChanges();
+      const articles = [{ title: 'A' } as Article, { title: 'B' } as Article];
+      svc.searchCustom.mockReturnValue(
+        of(makeSearchResponse({ id: 8, query: 'terminee', count: 2, articles })),
+      );
+      // La liste renvoyee par le serveur arrive vide (course possible) : la
+      // rubrique ne doit pas disparaitre pour autant.
+      svc.listSearches.mockReturnValue(of({ searches: [] as CustomSearchSummary[] }));
+
+      component.runCustomSearch('terminee');
+
+      expect(component.searches.map((s) => s.id)).toContain(8);
+    });
+
+    it('keeps the finished search listed even if the list refresh fails', () => {
+      fixture.detectChanges();
+      svc.searchCustom.mockReturnValue(of(makeSearchResponse({ id: 8, query: 'terminee' })));
+      svc.listSearches.mockReturnValue(throwError(() => new Error('404')));
+
+      component.runCustomSearch('terminee');
+
+      expect(component.searches.map((s) => s.query)).toEqual(['terminee']);
+      expect(component.activeSearchId).toBe(8);
+    });
+
+    it('does not duplicate a search already present in the list', () => {
+      fixture.detectChanges();
+      component.searches = [makeSummary({ id: 8, query: 'ancienne version' })];
+      svc.searchCustom.mockReturnValue(
+        of(makeSearchResponse({ id: 8, query: 'terminee', articles: [{} as Article] })),
+      );
+      svc.listSearches.mockReturnValue(throwError(() => new Error('404')));
+
+      component.runCustomSearch('terminee');
+
+      expect(component.searches).toHaveLength(1);
+      expect(component.searches[0].query).toBe('terminee');
+      expect(component.searches[0].count).toBe(1);
+    });
+
+    it('keeps the existing list when the refresh fails on startup', () => {
+      const known = [makeSummary({ id: 1 })];
+      svc.listSearches.mockReturnValueOnce(of({ searches: known }));
+      fixture.detectChanges();
+
+      svc.listSearches.mockReturnValue(throwError(() => new Error('KO')));
+      svc.searchCustom.mockReturnValue(throwError(() => new Error('KO')));
+      component.runCustomSearch('q');
+
+      expect(component.searches).toEqual(known);
+    });
+
+    it('survives a response without an id (backend obsolete) without dropping the list', () => {
+      // Garde-fou : un backend non redemarre renvoie l'ancienne forme, sans id.
+      const known = [makeSummary({ id: 1 })];
+      svc.listSearches.mockReturnValueOnce(of({ searches: known }));
+      fixture.detectChanges();
+      svc.listSearches.mockReturnValue(throwError(() => new Error('404')));
+      svc.searchCustom.mockReturnValue(
+        of({ query: 'q', count: 0, articles: [] } as unknown as CustomSearchResponse),
+      );
+
+      expect(() => component.runCustomSearch('q')).not.toThrow();
+      expect(component.activeSearchId).toBeNull();
+      expect(component.searches).toEqual(known);
+    });
+
     it('does not refresh the list when the search failed', () => {
       fixture.detectChanges();
       svc.listSearches.mockClear();

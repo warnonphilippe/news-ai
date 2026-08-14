@@ -4,7 +4,12 @@ import { Subscription, interval } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
 
 import { DigestService } from './services/digest.service';
-import { Article, CustomSearchSummary, HistoryDay } from './models/article.model';
+import {
+  Article,
+  CustomSearchResponse,
+  CustomSearchSummary,
+  HistoryDay,
+} from './models/article.model';
 import { DigestListComponent } from './components/digest-list/digest-list.component';
 import { HistorySidebarComponent } from './components/history-sidebar/history-sidebar.component';
 import { CustomSearchBarComponent } from './components/custom-search-bar/custom-search-bar.component';
@@ -190,10 +195,12 @@ export class AppComponent implements OnInit, OnDestroy {
       next: (res) => {
         this.customResults = res.articles;
         this.customLoading = false;
-        this.activeSearchId = res.id;
-        // La recherche vient d'etre memorisee cote serveur : elle rejoint la
-        // liste, sans effacer les precedentes.
-        this.refreshSearches();
+        this.activeSearchId = res.id ?? null;
+        // Insertion immediate depuis la reponse : la rubrique apparait sans
+        // attendre l'aller-retour de la liste, et reste affichee meme si ce
+        // rafraichissement echoue. refreshSearches() reconcilie ensuite.
+        this.rememberSearch(res);
+        this.refreshSearches(res);
       },
       error: (err) => {
         this.customError =
@@ -209,8 +216,32 @@ export class AppComponent implements OnInit, OnDestroy {
     this.mode = 'daily';
   }
 
-  private refreshSearches(): void {
-    this.svc.listSearches().subscribe((res) => (this.searches = res.searches));
+  /** Ajoute (ou remplace) une recherche dans la liste, la plus recente en tete. */
+  private rememberSearch(res: CustomSearchResponse): void {
+    if (res.id == null) return;
+    const summary: CustomSearchSummary = {
+      id: res.id,
+      query: res.query,
+      created_at: res.created_at,
+      count: res.articles.length,
+    };
+    this.searches = [summary, ...this.searches.filter((s) => s.id !== res.id)];
+  }
+
+  /** Recharge la liste depuis le serveur (source de verite).
+   * `keep` est reinjecte apres coup : la recherche qu'on vient de terminer ne
+   * doit jamais disparaitre de la rubrique, meme si la liste renvoyee ne la
+   * contient pas encore. */
+  private refreshSearches(keep?: CustomSearchResponse): void {
+    this.svc.listSearches().subscribe({
+      next: (res) => {
+        this.searches = res.searches;
+        if (keep) this.rememberSearch(keep);
+      },
+      // Liste indisponible : on garde ce qu'on a deja affiche plutot que de
+      // vider la rubrique (un echec de lecture n'efface rien cote serveur).
+      error: () => {},
+    });
   }
 
   private loadDate(date: string): void {

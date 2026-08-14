@@ -264,6 +264,11 @@ polling, annulation d'une recherche personnalisée devenue obsolète).
   `EXA_API_KEY` / `BRAVE_API_KEY` dans `backend/.env` (les serveurs de recherche
   sont téléchargés via `npx` au premier appel).
 - **Port déjà utilisé** : relancez avec `BACKEND_PORT` / `FRONTEND_PORT`.
+- **Une recherche aboutit mais n'apparaît pas dans la barre latérale** : le
+  backend tourne encore avec du code antérieur (il est lancé **sans
+  rechargement automatique**, contrairement au frontend). Arrêtez (`Ctrl+C`)
+  et relancez `./start.sh`. Pour vérifier :
+  `curl -s localhost:8000/api/searches` doit répondre une liste, pas `404`.
 - **Forcer une nouvelle recherche le même jour** :
   `curl -X POST "http://localhost:8000/api/run?force=true"`.
 
