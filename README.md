@@ -208,6 +208,47 @@ pas à votre perception.
 
 ---
 
+## Tests
+
+Le projet dispose d'une suite de tests automatisés avec une **couverture de
+100 %** sur les deux côtés (backend et frontend), incluant les cas de base et
+les cas limites (dates malformées, erreurs réseau/LLM, garde anti-course,
+contraintes de clé étrangère, etc.).
+
+### Backend (pytest)
+
+```bash
+cd backend
+source .venv/bin/activate        # ou .venv\Scripts\activate sous Windows
+pip install -e ".[dev]"          # une seule fois
+pytest                           # lance les 330 tests
+pytest --cov=src --cov-report=term-missing   # avec rapport de couverture
+```
+
+Les tests sont **hermétiques** : `tests/conftest.py` fixe des identifiants
+factices avant tout import, de sorte qu'aucun test ne dépend d'un vrai
+`backend/.env` ni ne touche la vraie base `backend/data/news.db` (une base
+temporaire dédiée est utilisée pour toute la session de test). Aucun appel
+réseau réel (Exa, Brave, Azure OpenAI, Hacker News) n'est effectué : le LLM et
+les recherches sont simulés via des doublures ciblées.
+
+### Frontend (Jest)
+
+```bash
+cd frontend
+npm install                      # une seule fois
+npm test                         # lance les 136 tests
+npm run test:coverage            # avec rapport de couverture
+```
+
+Utilise `jest-preset-angular` (environnement jsdom, sans navigateur réel
+nécessaire). Les appels HTTP sont interceptés via `HttpClientTestingModule`,
+et `DigestService` est remplacé par un double contrôlé dans les tests de
+`AppComponent` pour valider précisément la logique d'état (bascule de mode,
+polling, annulation d'une recherche personnalisée devenue obsolète).
+
+---
+
 ## Dépannage
 
 - **« Backend indisponible »** au démarrage : le premier lancement installe les

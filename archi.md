@@ -538,3 +538,34 @@ Exa), `@modelcontextprotocol/server-brave-search`.
 - **Ressources complémentaires non implémentées** : `links_json` est toujours
   vide (le modèle `ArticleSummary` n'a pas de champ `links`).
 - **Mono-utilisateur** : SQLite local, pas conçu pour un déploiement multi-postes.
+
+---
+
+## 10. Tests
+
+**Couverture : 100 % des lignes** sur `backend/src` (330 tests, pytest) et sur
+`frontend/src/app` (136 tests, Jest). Voir [README.md § Tests](README.md) pour
+les commandes. Choix d'architecture spécifiques aux tests :
+
+- **Backend hermétique** : `backend/tests/conftest.py` fixe des clés API
+  factices dans `os.environ` **avant tout import de `src.*`**, et pointe
+  `DB_PATH` vers une base SQLite temporaire dédiée à la session de test. C'est
+  nécessaire car `src/api/routes.py` instancie `Repository(settings.db_path)`
+  au niveau module — sans cette précaution, importer le module de test suffit
+  à ouvrir la vraie base `backend/data/news.db`. Aucun appel réseau réel n'est
+  fait : le LLM est simulé (`FakeStructuredLLM`, injecté au point d'appel
+  `get_llm()`, qui laisse transiter le vrai `prompt | ...` LangChain pour
+  garder les tests sensibles au contenu réellement envoyé au modèle) et les
+  serveurs MCP (Exa/Brave) sont simulés via de faux `stdio_client`/`ClientSession`.
+- **Double couverture des deux graphes** (§ 3, décision des deux graphes
+  compilés séparément) : les tests de nodes et de graphe couvrent aussi bien
+  le chemin quotidien (`build_graph`/`run_digest`) que la recherche
+  personnalisée (`build_custom_graph`/`run_custom_search`), pour garantir que
+  les généralisations à base de `state.get(...) or settings.X` (§ decision
+  d'archi ci-dessus) n'altèrent jamais le comportement par défaut.
+- **Frontend sans navigateur réel** : `jest-preset-angular` + jsdom. Le
+  polling par `interval()` de `app.component.ts` est testé en mockant
+  directement `rxjs.interval` (`jest.spyOn(rxjs, 'interval')`) plutôt qu'avec
+  `fakeAsync`/`tick()` — ce dernier s'est montré non fiable dans cet
+  environnement dès que la mise en place de `TestBed` a lieu dans un
+  `beforeEach` asynchrone.
